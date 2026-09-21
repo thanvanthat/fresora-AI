@@ -1,0 +1,36 @@
+# FreshcoAI backend -- core.
+#
+#   py -m venv .venv
+#   .venv\Scripts\activate          (Windows)
+#   source .venv/bin/activate       (macOS/Linux)
+#   pip install -r requirements.txt
+#
+# This set gives you the full OpenCV measurement pipeline, the documented
+# freshness score, shelf-life estimation, storage guidance, the recipe engine
+# and the assistant.
+#
+# It does NOT include TensorFlow, so automatic food identification is disabled:
+# /api/v1/analyze returns a truthful 503 when called without a food name, and
+# the app asks the user to name the food instead. Everything else works. To turn
+# identification on, see requirements-ml.txt.
+#
+# Version note: these lower bounds are what actually resolves to binary wheels
+# on Python 3.14 (verified on 3.14.6). Older pins fail there -- pydantic-core
+# has no cp314 wheel before 2.46 and pip falls back to compiling Rust. The
+# floors are deliberately not upper-bounded so 3.11/3.12 users get wheels too.
+
+fastapi>=0.141
+uvicorn[standard]>=0.53
+pydantic>=2.13
+python-multipart>=0.0.32
+httpx>=0.28
+
+# Vision. OpenCV 5.x and 4.x are both fine: this codebase uses only long-stable
+# APIs (cvtColor, threshold+Otsu, connectedComponentsWithStats, Laplacian).
+opencv-python-headless>=4.10
+numpy>=2.1
+pillow>=11.0
+
+# Tests
+pytest>=8.3
+pytest-asyncio>=1.0

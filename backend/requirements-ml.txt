@@ -1,0 +1,36 @@
+# Optional: automatic food identification with MobileNetV2.
+#
+# Install AFTER requirements.txt:
+#
+#   pip install -r requirements-ml.txt
+#
+# ---------------------------------------------------------------------------
+# PYTHON VERSION REQUIREMENT
+# ---------------------------------------------------------------------------
+# TensorFlow publishes no wheels for Python 3.13 or 3.14. You need 3.11 or 3.12.
+# This machine currently has only 3.14, so this file is NOT installed and
+# identification is off.
+#
+# To enable it, install Python 3.12 and build a second venv:
+#
+#   winget install Python.Python.3.12
+#   py -3.12 -m venv .venv312
+#   .venv312\Scripts\activate
+#   pip install -r requirements.txt -r requirements-ml.txt
+#
+# On first run, Keras downloads the ImageNet weights once (~14 MB) to the path
+# in KERAS_HOME, or ~/.keras by default.
+#
+# ---------------------------------------------------------------------------
+# WHAT THIS ACTUALLY BUYS YOU
+# ---------------------------------------------------------------------------
+# Stock ImageNet weights identify: banana, orange, lemon, strawberry,
+# pineapple, pomegranate, apple (Granny Smith), cucumber, capsicum, broccoli,
+# cauliflower, mushroom, cabbage, bread.
+#
+# They CANNOT identify: tomato, potato, onion, spinach, carrot, mango, guava,
+# or any raw meat, fish or dairy -- ImageNet-1k has no class for these. Those
+# still need a user-supplied name until a fine-tuned model is set via
+# MODEL_PATH. See app/vision/classifier.py for the full mapping and reasoning.
+
+tensorflow-cpu==2.20.0 ; python_version < "3.13"
