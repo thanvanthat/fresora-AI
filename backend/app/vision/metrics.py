@@ -2,7 +2,7 @@
 
 Everything in this module is an actual measurement taken from the pixels. When a
 measurement cannot be made for an image, the field is returned as ``None`` and
-the mobile UI hides that row -- FreshcoAI never shows a fabricated metric.
+the mobile UI hides that row -- Fresora never shows a fabricated metric.
 
 Pipeline
 --------

@@ -1,11 +1,11 @@
-"""The FreshcoAI food assistant.
+"""The Fresora food assistant.
 
 Grounding rules, in order of precedence:
 
 1. The model is given the curated knowledge records for the food in question and
    told not to contradict them. Storage advice and shelf life are facts we hold,
    not things the model should author.
-2. The model is explicitly forbidden from ruling on food safety. FreshcoAI's own
+2. The model is explicitly forbidden from ruling on food safety. Fresora's own
    assessment and safety notice own that, and a language model looking at no
    image at all is in no position to add to it.
 3. When no provider is configured, the assistant still answers from the
@@ -23,20 +23,20 @@ from .provider import AIProvider, AIProviderError
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM = """You are the food assistant inside FreshcoAI, an app that helps
+_SYSTEM = """You are the food assistant inside Fresora, an app that helps
 people use up food before it is wasted.
 
 You help with: storage, shelf life, preservation, what to cook, and nutrition.
 
 Hard rules:
 
-1. REFERENCE NOTES below are FreshcoAI's own curated data. Treat them as
+1. REFERENCE NOTES below are Fresora's own curated data. Treat them as
    authoritative. Never contradict them, and never invent storage times or
    shelf-life figures that are not there. If the notes do not cover something,
    say you do not have specific data for it.
 2. Never judge whether food is safe to eat, and never say food IS safe. Do not
    discuss bacteria, pathogens, poisoning or illness. If the user asks "is this
-   safe?", tell them FreshcoAI assesses visible condition only, that it cannot
+   safe?", tell them Fresora assesses visible condition only, that it cannot
    verify safety from a photo, and that they should inspect the item and follow
    local food-safety guidance.
 3. The KITCHEN CONTEXT is what the user actually has. Suggest things that use
@@ -133,7 +133,7 @@ def answer_from_knowledge(request: AssistantRequest) -> AssistantResponse:
                 "I do not have curated data for that item yet. Scan it or add it to "
                 "your food list and I can tell you how to store it and roughly how "
                 "long it typically keeps.\n\n"
-                "FreshcoAI assesses visible condition only — it cannot verify food "
+                "Fresora assesses visible condition only — it cannot verify food "
                 "safety from a photo."
             ),
             source="knowledge",
@@ -212,7 +212,7 @@ def answer_from_knowledge(request: AssistantRequest) -> AssistantResponse:
         )
 
     paragraphs.append(
-        "FreshcoAI assesses visible condition only — it cannot verify food safety "
+        "Fresora assesses visible condition only — it cannot verify food safety "
         "from a photo."
     )
 
@@ -250,7 +250,7 @@ async def ask(
         fallback = answer_from_knowledge(request)
         fallback.reply = (
             "I could not reach the AI assistant just now, so here is what "
-            "FreshcoAI's food data says:\n\n" + fallback.reply
+            "Fresora's food data says:\n\n" + fallback.reply
         )
         return fallback
 

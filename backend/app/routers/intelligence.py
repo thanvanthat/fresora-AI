@@ -48,7 +48,7 @@ async def assistant_chat(request: AssistantRequest) -> AssistantResponse:
 
 @router.get("/knowledge/foods")
 async def list_known_foods() -> dict[str, list[str] | int]:
-    """Every food FreshcoAI holds reference data for.
+    """Every food Fresora holds reference data for.
 
     The app uses this to populate the manual-entry picker and the "not a X?"
     correction list, so the two never drift out of sync with the server.

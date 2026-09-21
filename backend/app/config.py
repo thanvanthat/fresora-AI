@@ -30,7 +30,7 @@ def _env_list(name: str, default: list[str]) -> list[str]:
 class Settings:
     """Immutable settings snapshot."""
 
-    app_name: str = "FreshcoAI API"
+    app_name: str = "Fresora API"
     api_prefix: str = "/api/v1"
     debug: bool = field(default_factory=lambda: _env_bool("DEBUG", False))
 

@@ -216,7 +216,7 @@ async def analyze(
                 storage_recommendation=StorageRecommendation(
                     headline="Tell us what this is",
                     details=[
-                        "Choose the food name and FreshcoAI will assess it and "
+                        "Choose the food name and Fresora will assess it and "
                         "recommend storage."
                     ],
                     storage_type="refrigerated",
@@ -262,7 +262,7 @@ async def analyze(
     if record is None:
         note = (
             note or ""
-        ) + " FreshcoAI has no reference data for this food, so storage advice and the freshness window are generic."
+        ) + " Fresora has no reference data for this food, so storage advice and the freshness window are generic."
         note = note.strip()
 
     # --- Measure and score ------------------------------------------------
@@ -379,7 +379,7 @@ async def storage_recommendation(request: StorageRequest) -> StorageResponse:
                 preservation=[],
             ),
             known=False,
-            note="This food is not in FreshcoAI's reference data yet.",
+            note="This food is not in Fresora's reference data yet.",
         )
 
     return StorageResponse(

@@ -16,7 +16,7 @@ An honest limitation of the ``imagenet`` mode
 ImageNet-1k contains a usable class for *some* foods (banana, orange, lemon,
 strawberry, pineapple, pomegranate, cucumber, bell pepper, broccoli,
 cauliflower, mushroom, cabbage, bread, bagel) but has **no class at all** for
-several foods FreshcoAI cares about -- tomato, potato, onion, spinach, carrot,
+several foods Fresora cares about -- tomato, potato, onion, spinach, carrot,
 mango, guava, and raw chicken, fish, beef, milk or yoghurt.
 
 For those, stock ImageNet weights cannot identify the item, and this module says
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 MODEL_INPUT_SIZE = (224, 224)
 
 #: ImageNet class name (as Keras ``decode_predictions`` reports it) -> the
-#: FreshcoAI food name. Only unambiguous mappings appear here.
+#: Fresora food name. Only unambiguous mappings appear here.
 IMAGENET_FOOD_MAP: dict[str, str] = {
     # Fruit
     "banana": "Banana",

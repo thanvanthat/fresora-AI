@@ -440,7 +440,7 @@ def generate_with_rules(request: RecipeRequest) -> RecipeResponse:
 
 # --- LLM path -------------------------------------------------------------
 
-_RECIPE_SYSTEM = """You are the recipe engine inside FreshcoAI, a food-waste app.
+_RECIPE_SYSTEM = """You are the recipe engine inside Fresora, a food-waste app.
 
 Write one practical home recipe that uses as many of the LISTED INGREDIENTS as
 sensibly fit together. Rules you must follow:
@@ -622,7 +622,7 @@ async def generate_recipe(
             _append_note(
                 result,
                 "No AI provider is configured on the server, so this came from "
-                "FreshcoAI's built-in recipe matcher.",
+                "Fresora's built-in recipe matcher.",
             )
         return result
 
@@ -638,7 +638,7 @@ async def generate_recipe(
         result = generate_with_rules(request)
         _append_note(
             result,
-            "The AI provider's recipe could not be used, so FreshcoAI's built-in "
+            "The AI provider's recipe could not be used, so Fresora's built-in "
             "recipe matcher ran instead.",
         )
         return result

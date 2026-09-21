@@ -1,4 +1,4 @@
-# FreshcoAI backend -- core.
+# Fresora backend -- core.
 #
 #   py -m venv .venv
 #   .venv\Scripts\activate          (Windows)

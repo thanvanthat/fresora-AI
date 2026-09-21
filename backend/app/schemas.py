@@ -18,7 +18,7 @@ StorageType = Literal["pantry", "refrigerated", "frozen", "counter"]
 
 #: The single safety notice shown wherever an assessment is displayed.
 SAFETY_NOTICE = (
-    "FreshcoAI analyzes visible food characteristics from images. It cannot "
+    "Fresora analyzes visible food characteristics from images. It cannot "
     "detect microscopic bacteria, odorless toxins, or all internal food-safety "
     "hazards. Results are AI-assisted estimates, not official food-safety "
     "guarantees."

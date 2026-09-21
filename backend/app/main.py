@@ -1,4 +1,4 @@
-"""FreshcoAI API entry point.
+"""Fresora API entry point.
 
 Run locally with::
 

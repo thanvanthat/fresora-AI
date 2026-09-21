@@ -2,7 +2,7 @@
 
 This is deliberately hand-curated, not model-generated. Storage advice, typical
 shelf life and preservation methods are the kind of thing a language model will
-happily invent, so FreshcoAI keeps them as data and lets the LLM *synthesise
+happily invent, so Fresora keeps them as data and lets the LLM *synthesise
 from* these records rather than author them (see app/ai/assistant.py).
 
 Shelf-life figures are typical domestic ranges for the storage mode named, drawn
@@ -636,7 +636,7 @@ for _record in ALL_FOODS:
 #: saturated chromatic food it is meaningless as an absolute: a flawless red
 #: tomato measures ~1.0 on the normalised scale, because a large positive a*
 #: drives the formula regardless of condition. Comparing it across foods would
-#: need a reference BI per food, which FreshcoAI does not have.
+#: need a reference BI per food, which Fresora does not have.
 #:
 #: So browning is measured only for the foods below. For everything else the
 #: metric is returned as null, the UI hides the row, and the freshness formula
