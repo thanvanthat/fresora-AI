@@ -17,7 +17,7 @@ import { Icon } from '../../src/components/Icon';
 import { Body, Caption, Label, Title } from '../../src/components/Text';
 import { ErrorState } from '../../src/components/States';
 import { useToast } from '../../src/components/Toast';
-import { pickFromGallery } from '../../src/services/image';
+import { captureFromCamera, pickFromGallery } from '../../src/services/image';
 import { useAppStore } from '../../src/store/app';
 import { useTranslation } from '../../src/i18n';
 import { FOOD_CATEGORIES, type FoodCategory } from '../../src/types';
@@ -100,6 +100,50 @@ export default function ScanScreen() {
 
     startAnalysis(result.uri);
   }, [startAnalysis, t, toast]);
+
+  const onCaptureWeb = useCallback(async () => {
+    const result = await captureFromCamera();
+
+    if (result.permissionDenied) {
+      toast.show(t('scanner.permissionDeniedBody'), 'error');
+      return;
+    }
+    if (result.cancelled) return;
+
+    startAnalysis(result.uri);
+  }, [startAnalysis, t, toast]);
+
+  // --- Web capture ------------------------------------------------------
+  // A live CameraView preview needs getUserMedia, which mobile browsers gate
+  // inconsistently, and a refused permission cannot be recovered in a browser
+  // because Linking.openSettings() has no settings screen to open. Handing off
+  // to the phone's own camera app avoids both problems, so the web build never
+  // mounts the preview at all.
+  if (Platform.OS === 'web') {
+    return (
+      <View style={[styles.permissionWrap, { paddingTop: insets.top + spacing.xxl }]}>
+        <View style={styles.permissionIcon}>
+          <Icon name="camera" size={30} color={colors.primary} />
+        </View>
+        <Title align="center" heading>
+          {t('scanner.title')}
+        </Title>
+        <Body align="center" style={styles.permissionBody}>
+          {t('scanner.webCaptureBody')}
+        </Body>
+
+        <View style={styles.permissionActions}>
+          <Button label={t('scanner.takePhoto')} icon="camera" onPress={onCaptureWeb} />
+          <Button
+            label={t('scanner.gallery')}
+            icon="gallery"
+            variant="secondary"
+            onPress={onPickGallery}
+          />
+        </View>
+      </View>
+    );
+  }
 
   // --- Permission states ----------------------------------------------
   if (!permission) {

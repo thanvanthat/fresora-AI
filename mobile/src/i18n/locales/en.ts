@@ -156,6 +156,8 @@ const en = {
     prompt: 'Place food inside the frame',
     hint: 'Even lighting and a plain background give the best read.',
     gallery: 'Gallery',
+    takePhoto: 'Take Photo',
+    webCaptureBody: 'Use your camera to take a photo, or choose one you already have.',
     flash: 'Flash',
     history: 'History',
     capture: 'Capture',

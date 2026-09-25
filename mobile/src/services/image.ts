@@ -112,6 +112,38 @@ export interface PickResult {
   permissionDenied?: boolean;
 }
 
+/**
+ * Opens the device camera through the picker rather than a live preview.
+ *
+ * This is the web capture path. `expo-camera`'s `CameraView` needs
+ * `getUserMedia`, which mobile browsers gate inconsistently, and a refused
+ * permission is unrecoverable in a browser because there is no OS settings
+ * screen for `Linking.openSettings()` to open. The picker instead renders
+ * `<input type="file" accept="image/*" capture="environment">`, which hands
+ * off to the phone's own camera app -- the path Safari and Chrome both
+ * support.
+ *
+ * `requestCameraPermissionsAsync` resolves granted on web without a prompt;
+ * the real permission check happens when the browser opens the input.
+ */
+export async function captureFromCamera(): Promise<PickResult> {
+  const permission = await ImagePicker.requestCameraPermissionsAsync();
+  if (!permission.granted) {
+    return { uri: '', cancelled: true, permissionDenied: true };
+  }
+
+  const result = await ImagePicker.launchCameraAsync({
+    mediaTypes: ['images'],
+    quality: 1,
+    allowsEditing: false,
+  });
+
+  if (result.canceled || !result.assets?.length) {
+    return { uri: '', cancelled: true };
+  }
+  return { uri: result.assets[0].uri, cancelled: false };
+}
+
 /** Opens the photo library. */
 export async function pickFromGallery(): Promise<PickResult> {
   const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
