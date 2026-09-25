@@ -406,13 +406,51 @@ def test_assistant_handles_a_freezing_question(client: TestClient) -> None:
     assert "240" in body["reply"] or "freez" in body["reply"].lower()
 
 
-def test_assistant_admits_when_it_has_no_data(client: TestClient) -> None:
+def test_assistant_is_useful_without_a_known_food_but_says_it_is_general(
+    client: TestClient,
+) -> None:
+    """Dragonfruit is not in the knowledge base.
+
+    Refusing outright was the old behaviour and left the assistant useless
+    right after an unidentified scan. It may now answer from general guidance,
+    but it must not let that read as knowledge about dragonfruit specifically.
+    """
     body = client.post(
         f"{PREFIX}/assistant/chat",
         json={"message": "How do I store dragonfruit?"},
     ).json()
+
+    reply = body["reply"].lower()
     assert body["grounded_on"] == []
-    assert "do not have curated data" in body["reply"].lower()
+    assert "general guidance" in reply
+    assert "fridge" in reply  # it did actually answer the storage question
+    assert "dragonfruit" not in reply  # and invented nothing about this one
+
+
+def test_assistant_answers_a_general_question_with_no_food_at_all(
+    client: TestClient,
+) -> None:
+    """"Can I freeze it?" straight after an unidentified scan."""
+    body = client.post(
+        f"{PREFIX}/assistant/chat",
+        json={"message": "Can I freeze it?"},
+    ).json()
+
+    reply = body["reply"].lower()
+    assert "freez" in reply
+    assert "freezer burn" in reply or "portions" in reply
+
+
+def test_assistant_declines_an_off_topic_question(client: TestClient) -> None:
+    body = client.post(
+        f"{PREFIX}/assistant/chat",
+        json={"message": "What is the capital of France?"},
+    ).json()
+
+    reply = body["reply"].lower()
+    assert "paris" not in reply
+    # It should say what it can help with rather than just refusing.
+    assert "freezing" in reply or "storage" in reply
 
 
 def test_assistant_rejects_an_empty_message(client: TestClient) -> None:

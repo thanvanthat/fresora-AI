@@ -108,6 +108,111 @@ def _build_context_block(request: AssistantRequest) -> tuple[str, list[str]]:
     return "\n".join(lines), sorted(seen)
 
 
+_SAFETY_LINE = (
+    "Fresora assesses visible condition only — it cannot verify food safety "
+    "from a photo."
+)
+
+#: General guidance for questions that name no food.
+#:
+#: These are what people actually ask before the app knows what it is looking
+#: at, so answering them is the difference between an assistant and a lookup
+#: table. Every entry is ordinary domestic practice stated as typical, and none
+#: of it asserts that any particular item is safe to eat -- that judgement stays
+#: with the user and the printed date.
+#:
+#: Ordered by specificity: spoilage is checked before storage because "how do I
+#: know if it has gone off in the fridge" is a spoilage question.
+_GENERAL_TOPICS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (
+        ("gone off", "gone bad", "spoiled", "spoilt", "rotten", "smell", "smells", "mould", "mold", "slimy", "off"),
+        "Trust your nose first: a sour, sharp or ammonia-like smell is the most "
+        "reliable single sign, and it beats appearance. Then look for slime or a "
+        "sticky film, fuzzy or coloured mould, dulling and darkening, liquid "
+        "pooling in the pack, or a swollen lid or bag. For meat, poultry and "
+        "fish, treat smell and the printed date as decisive — those are the "
+        "foods where looks are least informative. If several signs agree, or "
+        "you are unsure about a high-risk food, throw it out.",
+    ),
+    (
+        ("freeze", "freezer", "frozen"),
+        "Freeze while the food is still good: freezing holds condition, it does "
+        "not restore it, so nothing comes out better than it went in. Wrap "
+        "tightly or use an airtight box to avoid freezer burn, freeze in "
+        "portions you will actually use, and label with the date. As typical "
+        "figures: raw meat and poultry keep about 3–6 months, oily fish about "
+        "2–3, cooked dishes and soups 2–3, bread about 3. Soft fruit and leafy "
+        "greens freeze fine for cooking and smoothies but lose their texture "
+        "for eating raw. Thaw in the fridge rather than on the counter, and do "
+        "not refreeze something raw once it has thawed.",
+    ),
+    (
+        ("leftover", "leftovers", "reheat", "cooked yesterday", "reheating"),
+        "Cool leftovers quickly — within about two hours — then refrigerate in a "
+        "shallow covered container, and eat them within two to three days. "
+        "Reheat until piping hot all the way through, not just warm at the "
+        "edges, and only reheat a given portion once. Rice is the one to be "
+        "careful with: cool it fast and refrigerate promptly rather than "
+        "leaving it standing.",
+    ),
+    (
+        ("store", "storage", "keep", "fridge", "refrigerat", "cupboard", "pantry", "counter"),
+        "The broad rules: the fridge below 5 °C, raw meat and fish on the bottom "
+        "shelf so nothing drips onto food below, and cooked or ready-to-eat food "
+        "above it. Most leafy greens and berries do best cold and loosely "
+        "covered, not sealed airtight. Potatoes, onions, garlic, bananas and "
+        "whole tomatoes prefer a cool dark spot out of the fridge — cold flattens "
+        "the flavour and, for potatoes, turns starch to sugar. Keep onions away "
+        "from potatoes, and apples and bananas away from things you do not want "
+        "ripening early.",
+    ),
+    (
+        ("how long", "shelf life", "last", "expire", "expiry", "use by", "best before"),
+        "It depends heavily on the food, so name it and I will give you the "
+        "typical window. In general: leafy greens and berries are measured in "
+        "days, most hard vegetables and root vegetables in weeks, and raw meat, "
+        "poultry and fish in a small number of days refrigerated. A printed "
+        "use-by date always takes priority over an estimate — that one is about "
+        "safety, whereas best-before is about quality.",
+    ),
+    (
+        ("waste", "wasting", "throw away", "bin", "compost", "zero-waste", "leftover food"),
+        "The things that actually move the needle: store items properly the day "
+        "you buy them, keep the oldest at the front and use it first, and plan "
+        "around what is closest to turning. Stems, leaves and peels that usually "
+        "get binned — broccoli stalks, carrot tops, herb stems — are fine in "
+        "stock, soup and pesto. Freeze what you cannot get to in time rather "
+        "than hoping. In the app, the inventory sorts by what needs attention "
+        "first, and the recipe tab builds around those items.",
+    ),
+    (
+        ("wash", "washing", "rinse", "clean"),
+        "Wash fruit and vegetables under running water just before you use them, "
+        "not before storing — surface moisture speeds up spoilage. Do not wash "
+        "raw chicken: it spreads bacteria around the sink rather than removing "
+        "it, and cooking handles it. Wash hands, boards and knives between raw "
+        "meat and anything eaten uncooked.",
+    ),
+    (
+        ("ripen", "ripe", "unripe", "ripening"),
+        "A paper bag speeds ripening by trapping the ethylene the fruit gives "
+        "off, and adding a banana or apple speeds it further. To slow things "
+        "down instead, separate the ethylene producers — bananas, apples, "
+        "avocados, tomatoes — from everything else, and refrigerate once ripe. "
+        "Avocados, bananas, mangoes, pears and tomatoes all ripen after picking; "
+        "berries, citrus and grapes do not, so they are as good as they will get.",
+    ),
+)
+
+
+def _general_guidance(question: str) -> str | None:
+    """Matches a food-agnostic question to curated general advice."""
+    for keywords, answer in _GENERAL_TOPICS:
+        if any(keyword in question for keyword in keywords):
+            return answer
+    return None
+
+
 def answer_from_knowledge(request: AssistantRequest) -> AssistantResponse:
     """Deterministic answer built only from curated records.
 
@@ -128,17 +233,39 @@ def answer_from_knowledge(request: AssistantRequest) -> AssistantResponse:
         target = record.name if record else None
 
     if target is None:
+        # "Can I freeze it?" has a good general answer even when we do not know
+        # what "it" is. Refusing to answer until the item is identified made the
+        # assistant useless in exactly the situation the user reaches for it:
+        # straight after a scan that came back unidentified.
+        general = _general_guidance(question)
+        if general is not None:
+            return AssistantResponse(
+                reply=(
+                    f"{general}\n\n"
+                    # The question may have named a food that is simply not in
+                    # the knowledge base. Saying the advice is general keeps
+                    # that from reading as specific knowledge about that food.
+                    "That is general guidance — tell me which food it is and I "
+                    "can give you figures for that one.\n\n"
+                    f"{_SAFETY_LINE}"
+                ),
+                source="knowledge",
+                grounded_on=[],
+                suggested_actions=["Name the food for specific advice"],
+            )
+
         return AssistantResponse(
             reply=(
-                "I do not have curated data for that item yet. Scan it or add it to "
-                "your food list and I can tell you how to store it and roughly how "
-                "long it typically keeps.\n\n"
-                "Fresora assesses visible condition only — it cannot verify food "
-                "safety from a photo."
+                "I can answer that better once I know what the food is — tap "
+                "\"Name your food\" on the scan, or add it to your food list.\n\n"
+                "Without that I can still help with general questions: freezing, "
+                "fridge and cupboard storage, what spoilage looks like, handling "
+                "leftovers, and cutting down waste.\n\n"
+                f"{_SAFETY_LINE}"
             ),
             source="knowledge",
             grounded_on=[],
-            suggested_actions=[],
+            suggested_actions=["Name the food for specific advice"],
         )
 
     record = knowledge.resolve(target)

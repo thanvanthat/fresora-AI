@@ -255,13 +255,20 @@ export default function AnalysisScreen() {
           {result.food_name}
         </Display>
 
-        {/* Correction affordance: the model can be wrong, and saying so is
-            better than showing a confident wrong label. */}
+        {/* Two different jobs share this control. When the model named the
+            food, it is a correction affordance and stays quiet. When nothing
+            was identified, naming the food is the only way to get a score, so
+            it becomes the primary action -- and the "Not a {food}?" phrasing
+            would read as "Not a Unidentified item?". */}
         <Button
-          label={t('analysis.notThisFood', { food: result.food_name })}
-          variant="ghost"
-          size="sm"
-          fullWidth={false}
+          label={
+            result.identified
+              ? t('analysis.notThisFood', { food: result.food_name })
+              : t('analysis.nameYourFood')
+          }
+          variant={result.identified ? 'ghost' : 'primary'}
+          size={result.identified ? 'sm' : 'md'}
+          fullWidth={!result.identified}
           onPress={() => setShowAlternatives(true)}
           style={styles.notThis}
         />
