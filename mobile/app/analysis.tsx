@@ -10,7 +10,7 @@ import { BottomSheet } from '../src/components/Controls';
 import { InfoCard, ShelfLifeCard } from '../src/components/FoodCard';
 import { Gutter, Screen } from '../src/components/Screen';
 import { CircularScore, MetricRow } from '../src/components/Score';
-import { ErrorState, SafetyNotice } from '../src/components/States';
+import { EmptyState, ErrorState, SafetyNotice } from '../src/components/States';
 import { Body, Caption, Display, Eyebrow, Label, Title } from '../src/components/Text';
 import { useToast } from '../src/components/Toast';
 import { LOW_CONFIDENCE_THRESHOLD } from '../src/constants/safety';
@@ -157,6 +157,35 @@ export default function AnalysisScreen() {
   if (analyze.isError) {
     const error = analyze.error;
     const isApi = error instanceof ApiError;
+
+    // Identification is an optional component, and this deployment runs
+    // without it. That is a known configuration rather than a failure, and
+    // retrying cannot change it -- the same request would fail identically
+    // every time. Offering "Try again" as the primary action was a dead end,
+    // so send the user straight to naming the food, which is the path that
+    // actually completes the scan.
+    if (isApi && error.code === 'model_unavailable') {
+      return (
+        <Screen showBack title={t('analysis.title')} tabBarPadding={false}>
+          {/* EmptyState, not ErrorState: nothing has gone wrong, so the red
+              alert styling and the assertive alert role would both misreport
+              what the user is looking at. */}
+          <EmptyState
+            icon="search"
+            title={t('errors.modelTitle')}
+            body={t('errors.modelBody')}
+            actionLabel={t('analysis.nameYourFood')}
+            onAction={() => setShowAlternatives(true)}
+          />
+
+          <NamePicker
+            visible={showAlternatives}
+            onClose={() => setShowAlternatives(false)}
+            onPick={reanalyzeAs}
+          />
+        </Screen>
+      );
+    }
 
     return (
       <Screen showBack title={t('analysis.title')} tabBarPadding={false}>

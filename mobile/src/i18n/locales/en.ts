@@ -212,6 +212,7 @@ const en = {
     scanAgain: 'Scan another',
     notThisFood: 'Not a {{food}}?',
     pickAlternative: 'Choose another match',
+    nameYourFood: 'Name your food',
     measuredIn: 'Measured in {{ms}} ms',
     modelVersion: 'Model {{version}}',
   },
@@ -432,8 +433,8 @@ const en = {
     serverTitle: 'Analysis server not reachable',
     serverBody:
       'Your device is online, but the Fresora analysis server did not respond. Check that it is running and on the same network, then try again.',
-    modelTitle: 'Analysis unavailable',
-    modelBody: 'The food analysis model is not available right now. Nothing was saved.',
+    modelTitle: 'Which food is this?',
+    modelBody: 'Automatic food identification is off in this build, so Fresora could not name the food itself. Pick it below and the full analysis runs straight away.',
     imageTitle: 'That image is hard to read',
     imageBody:
       'That image is a little difficult to analyze. Try placing the food in better lighting and capture a clearer image.',
