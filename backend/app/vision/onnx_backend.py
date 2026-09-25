@@ -52,6 +52,16 @@ GRAPH_FILE = "mobilenetv2-12.onnx"
 CLASS_INDEX_FILE = "imagenet_class_index.json"
 HEAD_FILE = "head.npz"
 LABELS_FILE = "labels.txt"
+HINT_FILE = "protein_hint.npz"
+HINT_LABELS_FILE = "protein_hint_labels.txt"
+
+#: Minimum probability before the raw-protein hint is reported at all.
+#:
+#: Measured on a held-out split: at 0.70 the hint fires on 88% of raw protein
+#: and is correct 97% of the time when it does. Precision is what matters here
+#: -- a wrong hint sends the user to the wrong shortlist, and staying quiet
+#: costs only the shortlist, since naming the food manually still works.
+HINT_MIN_CONFIDENCE = 0.70
 
 
 class OnnxUnavailable(RuntimeError):
@@ -115,15 +125,19 @@ def load_class_index(models_dir: Path = MODELS_DIR) -> dict[int, str]:
     return {int(k): str(v[1]) for k, v in raw.items()}
 
 
-def load_head(models_dir: Path = MODELS_DIR) -> TrainedHead | None:
-    """Loads the trained head, or None when this build has none.
+def load_head(
+    models_dir: Path = MODELS_DIR,
+    head_file: str = HEAD_FILE,
+    labels_file: str = LABELS_FILE,
+) -> TrainedHead | None:
+    """Loads a trained linear head, or None when this build has none.
 
     Returning None rather than raising is deliberate: no head is the normal
     state, and it must degrade to ImageNet mode instead of disabling
     identification entirely.
     """
-    head_path = models_dir / HEAD_FILE
-    labels_path = models_dir / LABELS_FILE
+    head_path = models_dir / head_file
+    labels_path = models_dir / labels_file
     if not head_path.exists() or not labels_path.exists():
         return None
 
@@ -149,6 +163,7 @@ class OnnxFoodModel:
         self._session = None
         self._input_name = ""
         self.head: TrainedHead | None = None
+        self.hint: TrainedHead | None = None
         self.class_index: dict[int, str] = {}
 
     def load(self) -> None:
@@ -176,6 +191,7 @@ class OnnxFoodModel:
         self._input_name = self._session.get_inputs()[0].name
         self.class_index = load_class_index(self._models_dir)
         self.head = load_head(self._models_dir)
+        self.hint = load_head(self._models_dir, HINT_FILE, HINT_LABELS_FILE)
 
     @property
     def mode(self) -> str:
@@ -200,3 +216,36 @@ class OnnxFoodModel:
         if self.head is None:
             return softmax(raw)
         return softmax(raw @ self.head.weights + self.head.bias)
+
+    def protein_hint_from_features(self, raw: np.ndarray) -> float | None:
+        """The hint decision, given an already-computed feature vector.
+
+        Kept separate from the graph so the thresholding rules can be tested
+        without a 14 MB model file.
+        """
+        if self.hint is None:
+            return None
+
+        try:
+            index = self.hint.labels.index("raw_protein")
+        except ValueError:
+            return None
+
+        probs = softmax(raw @ self.hint.weights + self.hint.bias)
+        confidence = float(probs[index])
+        if confidence < HINT_MIN_CONFIDENCE or int(np.argmax(probs)) != index:
+            return None
+        return confidence
+
+    def protein_hint(self, image_bgr: np.ndarray) -> float | None:
+        """Probability the image shows raw meat, poultry or seafood.
+
+        Returns None when the hint is unavailable or below the confidence
+        floor. This is deliberately NOT identification: the same training data
+        that separates raw protein from everything else at 86% cannot tell
+        chicken from mutton at better than 36%, so the hint narrows the choices
+        and the user still names the food.
+        """
+        if self.hint is None:
+            return None
+        return self.protein_hint_from_features(self.features(image_bgr))

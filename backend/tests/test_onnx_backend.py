@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from app.vision.onnx_backend import (
+    HINT_MIN_CONFIDENCE,
     MODELS_DIR,
     OnnxFoodModel,
     TrainedHead,
@@ -132,6 +133,99 @@ class TestPreprocess:
 
     def test_handles_a_non_square_image(self) -> None:
         assert preprocess(np.zeros((100, 700, 3), np.uint8)).shape == (1, 3, 224, 224)
+
+
+class TestProteinHint:
+    """The hint must stay silent unless it is confident and correct.
+
+    Precision is the property worth protecting: a wrong hint sends the user to
+    the wrong shortlist, whereas no hint costs only the shortlist.
+    """
+
+    #: A zero feature vector, so the bias alone decides the outcome and each
+    #: test states the probabilities it is exercising.
+    FEATURES = np.zeros(1000, dtype=np.float32)
+
+    def _model(
+        self, tmp_path: Path, weights: np.ndarray, bias: np.ndarray
+    ) -> OnnxFoodModel:
+        np.savez(tmp_path / "protein_hint.npz", weights=weights, bias=bias)
+        (tmp_path / "protein_hint_labels.txt").write_text(
+            "other\nraw_protein\n", encoding="utf-8"
+        )
+        model = OnnxFoodModel(tmp_path)
+        model.hint = load_head(
+            tmp_path, "protein_hint.npz", "protein_hint_labels.txt"
+        )
+        return model
+
+    def test_loads_the_hint_separately_from_the_main_head(self, tmp_path: Path) -> None:
+        np.savez(
+            tmp_path / "protein_hint.npz",
+            weights=np.zeros((1000, 2), dtype=np.float32),
+            bias=np.zeros(2, dtype=np.float32),
+        )
+        (tmp_path / "protein_hint_labels.txt").write_text(
+            "other\nraw_protein\n", encoding="utf-8"
+        )
+
+        # The main head is absent; the hint must still load.
+        assert load_head(tmp_path) is None
+        hint = load_head(tmp_path, "protein_hint.npz", "protein_hint_labels.txt")
+        assert hint is not None
+        assert hint.labels == ["other", "raw_protein"]
+
+    def test_stays_silent_when_no_hint_model_is_present(self, tmp_path: Path) -> None:
+        model = OnnxFoodModel(tmp_path)
+
+        assert model.hint is None
+        assert model.protein_hint_from_features(self.FEATURES) is None
+
+    def test_stays_silent_below_the_confidence_floor(self, tmp_path: Path) -> None:
+        # Near-tied: raw_protein wins, but nowhere near confidently enough.
+        # softmax([0.0, 0.2]) -> ~0.55 for raw_protein.
+        model = self._model(
+            tmp_path,
+            np.zeros((1000, 2), dtype=np.float32),
+            np.array([0.0, 0.2], dtype=np.float32),
+        )
+
+        assert HINT_MIN_CONFIDENCE > 0.55  # the floor is doing real work
+        assert model.protein_hint_from_features(self.FEATURES) is None
+
+    def test_stays_silent_when_other_wins(self, tmp_path: Path) -> None:
+        model = self._model(
+            tmp_path,
+            np.zeros((1000, 2), dtype=np.float32),
+            np.array([9.0, 0.0], dtype=np.float32),
+        )
+
+        assert model.protein_hint_from_features(self.FEATURES) is None
+
+    def test_reports_confidence_when_sure(self, tmp_path: Path) -> None:
+        model = self._model(
+            tmp_path,
+            np.zeros((1000, 2), dtype=np.float32),
+            np.array([0.0, 9.0], dtype=np.float32),
+        )
+
+        confidence = model.protein_hint_from_features(self.FEATURES)
+
+        assert confidence is not None
+        assert confidence > 0.99
+
+    def test_stays_silent_when_the_label_is_missing(self, tmp_path: Path) -> None:
+        model = OnnxFoodModel(tmp_path)
+        # A head whose labels do not include raw_protein must not be guessed at
+        # by position -- index 1 happening to be the confident class is not
+        # evidence that index 1 means raw protein.
+        model.hint = TrainedHead(
+            weights=np.zeros((1000, 2), dtype=np.float32),
+            bias=np.array([0.0, 9.0], dtype=np.float32),
+            labels=["cat", "dog"],
+        )
+
+        assert model.protein_hint_from_features(self.FEATURES) is None
 
 
 @needs_graph

@@ -274,6 +274,27 @@ class FoodClassifier:
             return self._interpret_custom(raw, top_k)
         return self._interpret_imagenet(raw, top_k)
 
+    def protein_hint(self, image_bgr: np.ndarray) -> float | None:
+        """Confidence that this is raw meat, poultry or seafood, or None.
+
+        Never raises: a missing hint model, a missing ONNX backend or a failed
+        inference all mean "no hint", and the scan must still return its
+        measurements. This is a shortlist, not an identification.
+        """
+        if self._onnx is None:
+            try:
+                self._ensure_loaded()
+            except ModelUnavailableError:
+                return None
+        if self._onnx is None:
+            return None
+
+        try:
+            return self._onnx.protein_hint(image_bgr)
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("Protein hint failed")
+            return None
+
     def _interpret_custom(self, raw: np.ndarray, top_k: int) -> Identification:
         labels = self._labels or []
         order = np.argsort(raw)[::-1][:top_k]
