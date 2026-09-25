@@ -9,8 +9,6 @@ import Constants from 'expo-constants';
  * live in the backend's own .env and never leave the server.
  */
 
-const env = process.env;
-
 /**
  * FastAPI base URL.
  *
@@ -18,9 +16,16 @@ const env = process.env;
  * cannot reach a dev server that way. The fallback below reads the LAN address
  * Metro is already serving from, which is almost always the right host during
  * development.
+ *
+ * Every read below must spell out `process.env.EXPO_PUBLIC_...` in full.
+ * Expo substitutes these at build time by matching that exact expression in
+ * the source, so aliasing the object first (`const env = process.env`) leaves
+ * the lookup to run against an empty object at runtime. That silently dropped
+ * the configured API URL from the web bundle and sent every request to
+ * localhost.
  */
 function inferApiBaseUrl(): string {
-  const explicit = env.EXPO_PUBLIC_API_BASE_URL?.trim();
+  const explicit = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
   if (explicit) return explicit.replace(/\/+$/, '');
 
   // e.g. "192.168.1.14:8081" -> "http://192.168.1.14:8000"
@@ -38,10 +43,10 @@ export const API_URL = `${API_BASE_URL}${API_PREFIX}`;
 export const API_TIMEOUT_MS = 45_000;
 export const API_UPLOAD_TIMEOUT_MS = 90_000;
 
-export const SUPABASE_URL = env.EXPO_PUBLIC_SUPABASE_URL?.trim() ?? '';
+export const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() ?? '';
 export const SUPABASE_ANON_KEY =
-  env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ??
-  env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim() ??
+  process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ??
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim() ??
   '';
 
 /**
