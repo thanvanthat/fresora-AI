@@ -8,6 +8,19 @@ waste.
 > microscopic bacteria, odorless toxins, or all internal food-safety hazards.
 > Results are AI-assisted estimates, not official food-safety guarantees.
 
+## Try it
+
+| | |
+|---|---|
+| **App** | <https://fresora-web.vercel.app> |
+| **API** | <https://fresora-api.vercel.app/api/v1/health> |
+
+Open the app link on a phone browser — it is the same React Native codebase
+compiled for web, so no install is needed. Camera capture depends on the
+browser granting camera access; choosing a photo from the gallery always
+works. Local notifications are native-only and simply do not fire on the web
+build.
+
 ---
 
 ## What it does
@@ -132,12 +145,18 @@ through the API would add a hop and a second place to enforce ownership.
 | Client state | Zustand |
 | Validation | Zod |
 | Charts | react-native-svg (hand-drawn, ~200 lines) |
+| Web target | react-native-web + `expo export --platform web` (static build) |
 | Backend | FastAPI, Uvicorn, Pydantic v2 |
 | Vision | OpenCV (headless), NumPy |
 | Classifier | MobileNetV2 — **optional**, see below |
 | Database | Supabase Postgres + RLS — **optional**, see below |
 | AI assistant | Provider abstraction (Anthropic / OpenAI) — **optional** |
 | i18n | Hand-rolled, ~100 lines over typed dictionaries |
+| Hosting | Vercel — static web build and the API as a Python serverless function |
+
+The same TypeScript source produces the Android app and the web build; there
+is no separate web codebase. `react-native-web` maps the RN primitives to DOM
+nodes, so a screen fixed in one place is fixed in both.
 
 ---
 
