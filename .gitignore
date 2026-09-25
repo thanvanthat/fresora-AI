@@ -28,12 +28,21 @@ venv/
 .mypy_cache/
 .ruff_cache/
 
-# Model weights are large binaries; keep them out of git.
+# Model weights are large binaries; keep them out of git by default.
 *.h5
 *.onnx
 *.tflite
 *.keras
-/backend/models/
+
+# The exception is backend/models/, which is a runtime asset rather than a
+# build artefact: the serverless function has no opportunity to download a
+# graph at startup, so anything not committed here means identification is
+# silently unavailable in production. 14 MB is worth a reproducible deploy.
+!/backend/models/
+!/backend/models/*.onnx
+!/backend/models/*.json
+!/backend/models/*.npz
+!/backend/models/labels.txt
 
 # --- Editors / OS --------------------------------------------------------
 .DS_Store
