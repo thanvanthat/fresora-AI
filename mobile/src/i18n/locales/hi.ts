@@ -412,6 +412,10 @@ const hi: LocaleDictionary = {
     deleteAccountConfirmBody: 'यह पूर्वपत नहीं किया जा सकता।',
     version: 'संस्करण',
     aiInformation: 'AI जानकारी',
+    technology: 'तकनीक',
+    technologyBody: 'यह बिल्ड जिन तकनीकों पर चलता है, शुरू से अंत तक।',
+    deviceCapabilities: 'डिवाइस क्षमताएँ',
+    deviceCapabilitiesBody: 'ऐप जिन हार्डवेयर और OS सुविधाओं का उपयोग करता है, और यहाँ उनका काम।',
     aiInformationBody:
       'भोजन पहचान MobileNetV2 छवि वर्गीकारक से होती है। ताज़गी आकलन उस वर्गीकरण को रंग, सतह दोष और बनावट के OpenCV मापों के साथ जोड़ता है, और एक प्रलेखित सूत्र से स्कोर में बदलता है।',
     editName: 'आपका नाम',

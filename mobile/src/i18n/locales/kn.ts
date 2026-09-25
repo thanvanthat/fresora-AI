@@ -411,6 +411,10 @@ const kn: LocaleDictionary = {
     deleteAccountConfirmBody: 'ಇದನ್ನು ಹಿಂತಿರುಗಿಸಲಾಗದು.',
     version: 'ಆವೃತ್ತಿ',
     aiInformation: 'AI ಮಾಹಿತಿ',
+    technology: 'ತಂತ್ರಜ್ಞಾನ',
+    technologyBody: 'ಈ ಬಿಲ್ಡ್ ಚಲಿಸುವ ಎಲ್ಲಾ ತಂತ್ರಜ್ಞಾನಗಳು.',
+    deviceCapabilities: 'ಸಾಧನ ಸಾಮರ್ಥ್ಯಗಳು',
+    deviceCapabilitiesBody: 'ಆ್ಯಪ್ ಬಳಸುವ ಹಾರ್ಡ್‌ವೇರ್ ಮತ್ತು OS ವೈಶಿಷ್ಟ್ಯಗಳು, ಮತ್ತು ಅವುಗಳ ಕೆಲಸ.',
     aiInformationBody:
       'ಆಹಾರ ಗುರುತಿಸುವಿಕೆಗೆ MobileNetV2 ಚಿತ್ರ ವರ್ಗೀಕರಣ ಬಳಸುತ್ತದೆ. ತಾಜಾತನ ಮೌಲ್ಯಮಾಪನ ಆ ವರ್ಗೀಕರಣವನ್ನು ಬಣ್ಣ, ಮೇಲ್ಮೈ ದೋಷ ಮತ್ತು ವಿನ್ಯಾಸದ OpenCV ಅಳತೆಗಳೊಂದಿಗೆ ಸೇರಿಸಿ, ದಾಖಲಿತ ಸೂತ್ರದಿಂದ ಅಂಕವಾಗಿ ಪರಿವರ್ತಿಸುತ್ತದೆ.',
     editName: 'ನಿಮ್ಮ ಹೆಸರು',

@@ -415,6 +415,10 @@ const en = {
     deleteAccountConfirmBody: 'This cannot be undone.',
     version: 'Version',
     aiInformation: 'AI information',
+    technology: 'Technology',
+    technologyBody: 'Everything this build runs on, end to end.',
+    deviceCapabilities: 'Device capabilities',
+    deviceCapabilitiesBody: 'Hardware and OS features the app uses, and what each one does here.',
     aiInformationBody:
       'Food identification uses a MobileNetV2 image classifier. Freshness assessment combines that classification with OpenCV measurements of colour, surface defects and texture, mapped to a score by a documented deterministic formula.',
     editName: 'Your name',

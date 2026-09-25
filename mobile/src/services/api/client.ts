@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 import { API_TIMEOUT_MS, API_UPLOAD_TIMEOUT_MS, API_URL } from '../../constants/config';
 import { useAppStore } from '../../store/app';
 
@@ -223,11 +225,27 @@ export interface UploadField {
 }
 
 /**
+ * Turns an image reference into whatever this platform's FormData understands.
+ *
+ * React Native's FormData accepts `{ uri, name, type }` and streams the file
+ * from disk. The browser's does not: it is the DOM FormData, which stringifies
+ * any non-Blob value, so that same object is sent as the literal text
+ * "[object Object]" and the server rejects the request as a missing file. On
+ * web the URI is a blob:/data: URL, so fetching it back yields the real bytes
+ * to send as a File.
+ */
+async function toFormFile(file: UploadField): Promise<Blob | UploadField> {
+  if (Platform.OS !== 'web') return file;
+
+  const blob = await (await fetch(file.uri)).blob();
+  return new File([blob], file.name, { type: file.type || blob.type });
+}
+
+/**
  * Multipart upload for image analysis.
  *
- * React Native's FormData accepts `{ uri, name, type }` in place of a Blob and
- * streams the file from disk. The content-type header is deliberately omitted:
- * fetch has to set it so the multipart boundary is correct.
+ * The content-type header is deliberately omitted: fetch has to set it so the
+ * multipart boundary is correct.
  */
 export async function apiUpload<T>(
   path: string,
@@ -236,8 +254,14 @@ export async function apiUpload<T>(
   options: RequestOptions = {},
 ): Promise<T> {
   const form = new FormData();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RN FormData file shape
-  form.append('image', file as any);
+  const value = await toFormFile(file);
+
+  if (value instanceof Blob) {
+    form.append('image', value, file.name);
+  } else {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RN FormData file shape
+    form.append('image', value as any);
+  }
 
   for (const [key, value] of Object.entries(fields)) {
     if (value !== undefined && value !== '') form.append(key, value);

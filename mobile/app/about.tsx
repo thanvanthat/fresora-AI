@@ -1,4 +1,4 @@
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 
 import { Pill } from '../src/components/Badge';
 import { Card, Section } from '../src/components/Card';
@@ -70,6 +70,49 @@ export default function AboutScreen() {
           </View>
         </Card>
 
+        {/* --- Technology --------------------------------------------- */}
+        {/* Everything that actually ships. The platform row is computed so
+            this never claims a capability the current build does not have. */}
+        <Card>
+          <Eyebrow>{t('profile.technology')}</Eyebrow>
+          <Body style={styles.body}>{t('profile.technologyBody')}</Body>
+
+          <View style={styles.list}>
+            <Row label="Platform" value={platformSummary()} />
+            <Row label="App framework" value="React Native 0.86 · Expo SDK 57" />
+            <Row label="Language" value="TypeScript (strict)" />
+            <Row label="Navigation" value="expo-router (file-based)" />
+            <Row label="Server state" value="TanStack Query" />
+            <Row label="Client state" value="Zustand" />
+            <Row label="Validation" value="Zod" />
+            <Row label="Charts" value="react-native-svg" />
+            <Row label="Web target" value="react-native-web" />
+            <Row label="API" value="FastAPI · Uvicorn · Pydantic v2" />
+            <Row label="Computer vision" value="OpenCV (headless) · NumPy" />
+            <Row label="Image classifier" value="MobileNetV2 (TensorFlow, optional)" />
+            <Row label="Image pipeline" value="expo-image-manipulator · Pillow" />
+            <Row label="Database" value="Supabase Postgres + RLS (optional)" />
+            <Row label="Hosting" value="Vercel — static web + Python serverless" />
+            <Row label="Languages" value="English, Tamil, Hindi, Malayalam, Telugu, Kannada" />
+          </View>
+        </Card>
+
+        {/* --- Device capabilities ------------------------------------ */}
+        <Card tone="sunken">
+          <Eyebrow>{t('profile.deviceCapabilities')}</Eyebrow>
+          <Body style={styles.body}>{t('profile.deviceCapabilitiesBody')}</Body>
+
+          <View style={styles.list}>
+            <Row label="Camera" value={cameraSummary()} />
+            <Row label="Photo library" value="expo-image-picker" />
+            <Row label="Network status" value="@react-native-community/netinfo" />
+            <Row label="Haptics" value={nativeOnly('expo-haptics')} />
+            <Row label="Local notifications" value={nativeOnly('expo-notifications')} />
+            <Row label="Secure storage" value={nativeOnly('expo-secure-store')} />
+            <Row label="File storage" value={nativeOnly('expo-file-system')} />
+          </View>
+        </Card>
+
         {/* --- Limits ------------------------------------------------- */}
         <Card tone="sunken">
           <Eyebrow>{t('safety.disclaimerTitle')}</Eyebrow>
@@ -99,6 +142,28 @@ export default function AboutScreen() {
       </Gutter>
     </Screen>
   );
+}
+
+/** Which build the user is actually looking at. */
+function platformSummary(): string {
+  if (Platform.OS === 'web') return 'Web build (runs in the browser)';
+  return `Native ${Platform.OS === 'ios' ? 'iOS' : 'Android'} build`;
+}
+
+/**
+ * The web build deliberately does not mount a live camera preview: browsers
+ * gate getUserMedia inconsistently and a refusal cannot be undone from inside
+ * the page, so capture is handed to the device's own camera app instead.
+ */
+function cameraSummary(): string {
+  return Platform.OS === 'web'
+    ? 'Device camera via the browser file picker'
+    : 'expo-camera live preview (torch, framing guides)';
+}
+
+/** Native modules with no browser equivalent degrade rather than fail. */
+function nativeOnly(module: string): string {
+  return Platform.OS === 'web' ? `${module} — not available on web` : module;
 }
 
 function Row({ label, value }: { label: string; value: string }) {

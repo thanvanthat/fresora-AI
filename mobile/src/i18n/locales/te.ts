@@ -411,6 +411,10 @@ const te: LocaleDictionary = {
     deleteAccountConfirmBody: 'ఇది తిరిగి పొందలేరు.',
     version: 'వెర్షన్',
     aiInformation: 'AI సమాచారం',
+    technology: 'సాంకేతికత',
+    technologyBody: 'ఈ బిల్డ్ నడిచే అన్ని సాంకేతికతలు.',
+    deviceCapabilities: 'పరికర సామర్థ్యాలు',
+    deviceCapabilitiesBody: 'యాప్ ఉపయోగించే హార్డ్‌వేర్ మరియు OS ఫీచర్లు, వాటి పాత్ర.',
     aiInformationBody:
       'ఆహార గుర్తింపుకు MobileNetV2 చిత్ర వర్గీకరణ వాడుతుంది. తాజాదన అంచనా ఆ వర్గీకరణను రంగు, ఉపరితల లోపాలు, ఆకృతి యొక్క OpenCV కొలతలతో కలిపి, నమోదైన సూత్రంతో స్కోరుగా మారుస్తుంది.',
     editName: 'మీ పేరు',
