@@ -148,7 +148,7 @@ through the API would add a hop and a second place to enforce ownership.
 | Web target | react-native-web + `expo export --platform web` (static build) |
 | Backend | FastAPI, Uvicorn, Pydantic v2 |
 | Vision | OpenCV (headless), NumPy |
-| Classifier | MobileNetV2 — **optional**, see below |
+| Classifier | MobileNetV2 via onnxruntime (bundled, 14 MB) |
 | Database | Supabase Postgres + RLS — **optional**, see below |
 | AI assistant | Provider abstraction (Anthropic / OpenAI) — **optional** |
 | i18n | Hand-rolled, ~100 lines over typed dictionaries |
@@ -253,34 +253,63 @@ returns `null` and the other four signals carry the assessment.
 Fresora is designed to run with **zero credentials** and degrade honestly.
 `GET /api/v1/health` reports exactly what is live, and the You tab shows it.
 
-### Food identification (TensorFlow)
+### Food identification (ONNX)
 
-**Not installed by default.** TensorFlow publishes no wheels for Python 3.13+,
-so `requirements.txt` omits it.
+**Installed by default and working.** `onnxruntime` (24 MB) runs the
+MobileNetV2 graph committed at `backend/models/`, so identification needs no
+extra install and nothing is downloaded at first run.
 
-Without it, `POST /api/v1/analyze` returns a truthful `503 model_unavailable`
-when called with no food name, and the app asks the user to pick the food —
-then runs the full measurement and scoring pipeline as normal.
+This deliberately replaced TensorFlow. TF is ~600 MB installed, over the 250 MB
+limit for a Python serverless function, so identification could never have run
+on the deployed backend — and it publishes no wheels for Python 3.13+, so it
+was off locally too. The ONNX path fits alongside OpenCV with room to spare.
 
-To enable it you need Python 3.11 or 3.12:
+**What it identifies.** Stock ImageNet weights cover banana, orange, lemon,
+strawberry, pineapple, pomegranate, apple, cucumber, capsicum, broccoli,
+cauliflower, mushroom, cabbage and bread.
+
+**What it cannot.** ImageNet-1k has **no class at all** for tomato, potato,
+onion, spinach, carrot, mango, guava, or any raw meat, fish or dairy. For those
+`POST /api/v1/analyze` returns `200` with `identified: false`, `score: 0` and
+`scoring_method: "not-scored"` rather than guessing a name, and the app asks
+the user to pick the food — then runs the full measurement and scoring
+pipeline as normal.
+
+#### Adding classes ImageNet cannot name
+
+Train a linear head over the frozen graph. This is ordinary transfer learning:
+the frozen features already encode colour, texture and shape, so the head only
+has to separate your classes.
 
 ```bash
-winget install Python.Python.3.12
-py -3.12 -m venv .venv312
-.venv312\Scripts\activate
-pip install -r requirements.txt -r requirements-ml.txt
+# data/chicken/*.jpg, data/mutton/*.jpg, data/fish/*.jpg, ...
+python scripts/train_food_head.py --data data --out models
 ```
 
-An honest limitation even then: stock ImageNet weights recognise banana,
-orange, lemon, strawberry, pineapple, pomegranate, apple, cucumber, capsicum,
-broccoli, cauliflower, mushroom, cabbage and bread — but ImageNet-1k has **no
-class at all** for tomato, potato, onion, spinach, carrot, mango, guava, or any
-raw meat, fish or dairy. For those the classifier reports `identified: false`
-with its raw labels rather than guessing, and the user names the food. See
-`backend/app/vision/classifier.py` for the full mapping.
+Roughly 100–300 photos per class is a sensible floor; more helps most where
+classes look alike, such as chicken against fish. Training is CPU-only and
+takes seconds, and the head is a few hundred kilobytes, so it deploys with
+everything else. The script holds out a stratified slice and reports accuracy
+on images it never trained on — training accuracy alone looks excellent on any
+dataset and means nothing.
 
-For real coverage, fine-tune a model and point `MODEL_PATH` at it (with a
-`labels.txt` beside it).
+Drop `head.npz` and `labels.txt` into `backend/models/` and the API switches
+from `imagenet` to `custom` mode on the next start. **No head is committed:** a
+model is only as trustworthy as the photos behind it, and for raw meat that is
+a food-safety question, not a convenience one.
+
+Shoot the training photos the way the app will see them — item filling the
+frame, ordinary kitchen lighting, varied backgrounds and angles, including the
+awkward cases. A set shot in one session on one worktop teaches the head to
+recognise your worktop.
+
+Identifying meat automatically does not lift the high-risk score cap. A
+photograph still cannot establish whether poultry, meat, seafood or dairy is
+safe to eat.
+
+A pre-existing Keras model can still be loaded via `MODEL_PATH`; see
+[`requirements-ml.txt`](backend/requirements-ml.txt) for that legacy path and
+its costs.
 
 ### Supabase
 

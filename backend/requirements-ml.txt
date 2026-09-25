@@ -1,36 +1,34 @@
-# Optional: automatic food identification with MobileNetV2.
+# LEGACY. You almost certainly do not need this file.
 #
-# Install AFTER requirements.txt:
-#
-#   pip install -r requirements-ml.txt
-#
-# ---------------------------------------------------------------------------
-# PYTHON VERSION REQUIREMENT
-# ---------------------------------------------------------------------------
-# TensorFlow publishes no wheels for Python 3.13 or 3.14. You need 3.11 or 3.12.
-# This machine currently has only 3.14, so this file is NOT installed and
-# identification is off.
-#
-# To enable it, install Python 3.12 and build a second venv:
-#
-#   winget install Python.Python.3.12
-#   py -3.12 -m venv .venv312
-#   .venv312\Scripts\activate
-#   pip install -r requirements.txt -r requirements-ml.txt
-#
-# On first run, Keras downloads the ImageNet weights once (~14 MB) to the path
-# in KERAS_HOME, or ~/.keras by default.
+# Food identification now ships in requirements.txt and runs on onnxruntime
+# with the MobileNetV2 graph in models/. It works out of the box, on every
+# supported Python version, and is small enough to deploy to a serverless
+# function. Nothing here is required for it.
 #
 # ---------------------------------------------------------------------------
-# WHAT THIS ACTUALLY BUYS YOU
+# WHAT THIS FILE IS STILL FOR
 # ---------------------------------------------------------------------------
-# Stock ImageNet weights identify: banana, orange, lemon, strawberry,
-# pineapple, pomegranate, apple (Granny Smith), cucumber, capsicum, broccoli,
-# cauliflower, mushroom, cabbage, bread.
+# One thing only: loading a pre-existing Keras/TensorFlow model through the
+# MODEL_PATH setting. If you were handed a .keras or .h5 model and want to run
+# it as-is, install this and point MODEL_PATH at the file, with a labels.txt
+# beside it.
 #
-# They CANNOT identify: tomato, potato, onion, spinach, carrot, mango, guava,
-# or any raw meat, fish or dairy -- ImageNet-1k has no class for these. Those
-# still need a user-supplied name until a fine-tuned model is set via
-# MODEL_PATH. See app/vision/classifier.py for the full mapping and reasoning.
+# Be aware of what that costs: TensorFlow is roughly 600 MB installed, which is
+# over the 250 MB limit for a Python serverless function, so a deployment using
+# this path cannot run on Vercel. It also publishes no wheels for Python 3.13
+# or 3.14, so you need a 3.11/3.12 environment.
+#
+# ---------------------------------------------------------------------------
+# WHAT YOU PROBABLY WANT INSTEAD
+# ---------------------------------------------------------------------------
+# To add classes the stock graph cannot name -- raw chicken, mutton, fish,
+# prawn, or tomato, potato, onion, spinach, carrot, mango, none of which exist
+# in ImageNet-1k -- train a linear head over the frozen ONNX graph:
+#
+#   python scripts/train_food_head.py --data data --out models
+#
+# That needs no TensorFlow, trains on CPU in seconds from a few hundred photos
+# per class, and produces a head of a few hundred kilobytes that deploys with
+# the rest of the backend.
 
 tensorflow-cpu==2.20.0 ; python_version < "3.13"
