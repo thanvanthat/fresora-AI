@@ -37,6 +37,8 @@ from pathlib import Path
 
 import numpy as np
 
+from .onnx_backend import OnnxFoodModel, OnnxUnavailable
+
 logger = logging.getLogger(__name__)
 
 MODEL_INPUT_SIZE = (224, 224)
@@ -143,6 +145,9 @@ class FoodClassifier:
         self._mode = "custom" if self._model_path else "imagenet"
         self._lock = threading.Lock()
         self._load_error: str | None = None
+        #: ONNX is the preferred backend; TensorFlow stays only for loading a
+        #: pre-existing Keras model via MODEL_PATH.
+        self._onnx: OnnxFoodModel | None = None
 
     # --- Loading ----------------------------------------------------------
 
@@ -152,6 +157,10 @@ class FoodClassifier:
 
     @property
     def model_version(self) -> str:
+        # Reported to the client and shown in the You tab, so it has to name the
+        # backend that actually produced the prediction.
+        if self._onnx is not None:
+            return self._onnx.version
         if self._mode == "custom":
             return f"custom:{Path(self._model_path).name}"
         return "mobilenetv2-imagenet"
@@ -184,13 +193,29 @@ class FoodClassifier:
                 raise ModelUnavailableError(self._load_error) from exc
 
     def _load(self) -> None:
+        # ONNX first. It is the only backend small enough to deploy, so an
+        # explicit Keras MODEL_PATH is the sole reason to reach for TensorFlow.
+        if not self._model_path:
+            onnx = OnnxFoodModel()
+            try:
+                onnx.load()
+            except OnnxUnavailable as exc:
+                logger.info("ONNX backend unavailable (%s); trying TensorFlow", exc)
+            else:
+                self._onnx = onnx
+                self._model = onnx
+                self._mode = onnx.mode
+                self._labels = list(onnx.head.labels) if onnx.head else None
+                logger.info("Loaded ONNX classifier (%s)", onnx.version)
+                return
+
         try:
             from tensorflow.keras.applications import MobileNetV2  # noqa: PLC0415
             from tensorflow.keras.models import load_model  # noqa: PLC0415
         except ImportError as exc:
             self._load_error = (
-                "TensorFlow is not installed, so food identification is unavailable. "
-                "Install the backend requirements to enable it."
+                "Food identification is unavailable: no ONNX model bundle was "
+                "found and TensorFlow is not installed."
             )
             raise ModelUnavailableError(self._load_error) from exc
 
@@ -239,8 +264,11 @@ class FoodClassifier:
         self._ensure_loaded()
         assert self._model is not None  # _ensure_loaded guarantees this
 
-        batch = self._preprocess(image_bgr)
-        raw = self._model.predict(batch, verbose=0)[0]
+        if self._onnx is not None:
+            raw = self._onnx.predict(image_bgr)
+        else:
+            batch = self._preprocess(image_bgr)
+            raw = self._model.predict(batch, verbose=0)[0]
 
         if self._mode == "custom":
             return self._interpret_custom(raw, top_k)
@@ -269,12 +297,29 @@ class FoodClassifier:
             model_version=self.model_version,
         )
 
-    def _interpret_imagenet(self, raw: np.ndarray, top_k: int) -> Identification:
+    def _decode_imagenet(
+        self, raw: np.ndarray, top_k: int
+    ) -> list[tuple[str, str, float]]:
+        """Top-k as (synset_id, label, score), matching Keras decode_predictions.
+
+        The ONNX path decodes from the bundled class-index table so that no
+        TensorFlow import is needed to read a prediction.
+        """
+        if self._onnx is not None:
+            order = np.argsort(raw)[::-1][:top_k]
+            return [
+                ("", self._onnx.class_index.get(int(i), f"class_{int(i)}"), float(raw[int(i)]))
+                for i in order
+            ]
+
         from tensorflow.keras.applications.mobilenet_v2 import (  # noqa: PLC0415
             decode_predictions,
         )
 
-        decoded = decode_predictions(np.expand_dims(raw, axis=0), top=top_k)[0]
+        return decode_predictions(np.expand_dims(raw, axis=0), top=top_k)[0]
+
+    def _interpret_imagenet(self, raw: np.ndarray, top_k: int) -> Identification:
+        decoded = self._decode_imagenet(raw, top_k)
         raw_labels = [(str(name), float(score)) for _, name, score in decoded]
 
         mapped: list[Prediction] = []

@@ -66,9 +66,10 @@ def test_health_reports_real_capability(client: TestClient) -> None:
     body = response.json()
     assert body["status"] == "ok"
     assert body["known_foods"] > 20
-    # These must reflect reality, not optimism: TensorFlow is not installed here
-    # and no LLM key is set, so both should be False.
-    assert body["classifier_available"] is False
+    # These must reflect reality, not optimism. Identification now ships with
+    # the bundled ONNX graph, so it is genuinely available; no LLM key is set,
+    # so that stays False.
+    assert body["classifier_available"] is True
     assert body["llm_configured"] is False
     assert body["classifier_mode"] == "imagenet"
 
@@ -135,16 +136,24 @@ def test_analyze_reflects_a_deteriorated_surface(client: TestClient) -> None:
     assert spotted["visual_metrics"]["defect_coverage"] > clean["visual_metrics"]["defect_coverage"]
 
 
-def test_analyze_without_a_name_is_honest_when_the_model_is_absent(
-    client: TestClient,
-) -> None:
-    """TensorFlow is not installed, so this must fail truthfully, not guess."""
-    response = client.post(f"{PREFIX}/analyze", files=_upload(_jpeg()))
-    assert response.status_code == 503
+def test_analyze_without_a_name_does_not_guess(client: TestClient) -> None:
+    """A flat test image is not food, and the response must say so.
 
-    detail = response.json()["detail"]
-    assert detail["code"] == "model_unavailable"
-    assert "TensorFlow" in detail["message"]
+    The classifier runs, so this no longer 503s. What matters is that an
+    unrecognised item comes back explicitly unidentified and unscored rather
+    than being assigned a plausible-looking name and a freshness number.
+    """
+    response = client.post(f"{PREFIX}/analyze", files=_upload(_jpeg()))
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["identified"] is False
+    assert body["status"] == "unknown"
+    assert body["score"] == 0
+    assert body["confidence"] == 0.0
+    assert body["scoring_method"] == "not-scored"
+    # The user needs to know what to do next, not just that it failed.
+    assert "name" in body["recommended_action"].lower()
 
 
 def test_high_risk_food_is_capped_over_http(client: TestClient) -> None:
@@ -220,10 +229,16 @@ def test_vision_analysis_returns_measurements_only(client: TestClient) -> None:
     assert "status" not in body
 
 
-def test_identify_is_unavailable_without_tensorflow(client: TestClient) -> None:
+def test_identify_reports_an_unrecognised_item_rather_than_guessing(
+    client: TestClient,
+) -> None:
+    """The bundled graph runs, so a flat colour must come back unidentified."""
     response = client.post(f"{PREFIX}/food/identify", files=_upload(_jpeg()))
-    assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "model_unavailable"
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["identified"] is False
+    assert body["food_name"] is None or body["food_name"] == ""
 
 
 # --- Shelf life and storage ----------------------------------------------

@@ -9,10 +9,14 @@
 # freshness score, shelf-life estimation, storage guidance, the recipe engine
 # and the assistant.
 #
-# It does NOT include TensorFlow, so automatic food identification is disabled:
-# /api/v1/analyze returns a truthful 503 when called without a food name, and
-# the app asks the user to name the food instead. Everything else works. To turn
-# identification on, see requirements-ml.txt.
+# Food identification runs on onnxruntime with the MobileNetV2 graph in models/,
+# so it works out of this file alone -- no TensorFlow, and nothing to download
+# on first run. That identifies the fruit and vegetables in ImageNet-1k.
+#
+# It CANNOT identify raw meat, poultry or fish: ImageNet-1k has no class for
+# them, so the API still returns a truthful 503 for an unnamed photo of those
+# and the app asks for the name. Adding those classes needs a trained head --
+# see scripts/train_food_head.py.
 #
 # Version note: these lower bounds are what actually resolves to binary wheels
 # on Python 3.14 (verified on 3.14.6). Older pins fail there -- pydantic-core
@@ -30,6 +34,12 @@ httpx>=0.28
 opencv-python-headless>=4.10
 numpy>=2.1
 pillow>=11.0
+
+# Food identification. onnxruntime is 24 MB against TensorFlow's ~600 MB, which
+# is what makes identification deployable to a serverless function at all, and
+# it publishes wheels for every Python version this project supports. The
+# MobileNetV2 graph it runs lives in models/ and is committed.
+onnxruntime>=1.20
 
 # Tests
 pytest>=8.3
