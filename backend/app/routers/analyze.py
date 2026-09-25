@@ -259,15 +259,14 @@ async def analyze(
                     "Set the food name to continue, or re-scan in better lighting."
                 ),
                 reasoning=metrics.notes,
-                alternatives=[],
+                # Both of these carry the protein hint when it fired. Building
+                # them from `identification` here instead would discard it.
+                alternatives=alternatives,
                 scoring_method="not-scored",
                 processing_ms=elapsed,
                 model_version=model_version,
                 mask_source=metrics.mask_source,
-                note=(
-                    identification.note
-                    or "The model could not identify this item."
-                ),
+                note=note or "The model could not identify this item.",
             )
 
         resolved_name = identification.food_name or "Unidentified item"

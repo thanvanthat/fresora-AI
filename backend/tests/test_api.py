@@ -229,6 +229,48 @@ def test_vision_analysis_returns_measurements_only(client: TestClient) -> None:
     assert "status" not in body
 
 
+def test_protein_hint_reaches_the_response(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fired hint must arrive as alternatives and a note.
+
+    Regression test. The unidentified branch built its response from the
+    identification object, so assigning the hint to local `note` and
+    `alternatives` had no effect and the hint was silently dropped -- the
+    shortlist worked in every local check of the classifier and never reached
+    a single API caller.
+    """
+    from app.vision import classifier as classifier_module
+
+    monkeypatch.setattr(
+        classifier_module.FoodClassifier, "protein_hint", lambda self, frame: 0.93
+    )
+
+    body = client.post(f"{PREFIX}/analyze", files=_upload(_jpeg())).json()
+
+    assert body["identified"] is False
+    assert [a["food_name"] for a in body["alternatives"]] == ["Beef", "Chicken", "Fish"]
+    assert "raw meat, poultry or seafood" in body["note"]
+    # Still unscored: a hint is not an identification.
+    assert body["score"] == 0
+    assert body["scoring_method"] == "not-scored"
+
+
+def test_no_protein_hint_leaves_the_shortlist_empty(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.vision import classifier as classifier_module
+
+    monkeypatch.setattr(
+        classifier_module.FoodClassifier, "protein_hint", lambda self, frame: None
+    )
+
+    body = client.post(f"{PREFIX}/analyze", files=_upload(_jpeg())).json()
+
+    assert body["identified"] is False
+    assert "raw meat" not in (body["note"] or "")
+
+
 def test_identify_reports_an_unrecognised_item_rather_than_guessing(
     client: TestClient,
 ) -> None:
