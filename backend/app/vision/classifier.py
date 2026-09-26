@@ -69,6 +69,25 @@ IMAGENET_FOOD_MAP: dict[str, str] = {
     "beigel": "Bread",
 }
 
+#: Below this, the top ImageNet food label is a guess, not an identification.
+#: A tomato scores ~0.2 as "strawberry"; real bananas and oranges score > 0.6.
+MIN_IDENTIFY_CONFIDENCE = 0.30
+
+#: Median OpenCV hue (0-179) below which the food is red rather than orange.
+#: Tomatoes measure ~4, oranges ~12-18. ImageNet has no tomato class and files
+#: red round produce under "orange", so a red "orange" is rejected.
+RED_HUE_MAX = 8
+
+#: What to offer the user when a red item cannot be named. Tomato first: it is
+#: the red produce ImageNet cannot name at all.
+RED_PRODUCE_SHORTLIST: tuple[str, ...] = (
+    "Tomato",
+    "Apple",
+    "Strawberry",
+    "Capsicum",
+    "Pomegranate",
+)
+
 #: ImageNet labels that mean "this is food, but not a class we can name".
 #: Seeing one of these raises our confidence that a food is in frame even when
 #: we cannot identify it, which is worth reporting to the user.
@@ -272,7 +291,7 @@ class FoodClassifier:
 
         if self._mode == "custom":
             return self._interpret_custom(raw, top_k)
-        return self._interpret_imagenet(raw, top_k)
+        return self._interpret_imagenet(raw, top_k, _median_hue(image_bgr))
 
     def protein_hint(self, image_bgr: np.ndarray) -> float | None:
         """Confidence that this is raw meat, poultry or seafood, or None.
@@ -339,13 +358,20 @@ class FoodClassifier:
 
         return decode_predictions(np.expand_dims(raw, axis=0), top=top_k)[0]
 
-    def _interpret_imagenet(self, raw: np.ndarray, top_k: int) -> Identification:
+    def _interpret_imagenet(
+        self, raw: np.ndarray, top_k: int, median_hue: float | None = None
+    ) -> Identification:
         decoded = self._decode_imagenet(raw, top_k)
         raw_labels = [(str(name), float(score)) for _, name, score in decoded]
+        is_red = median_hue is not None and (median_hue < RED_HUE_MAX or median_hue > 170)
 
         mapped: list[Prediction] = []
+        rejected_orange = False
         for _, name, score in decoded:
             food = IMAGENET_FOOD_MAP.get(str(name))
+            if food == "Orange" and is_red:
+                rejected_orange = True
+                continue
             if food is not None and not any(p.food_name == food for p in mapped):
                 mapped.append(
                     Prediction(
@@ -356,6 +382,31 @@ class FoodClassifier:
         looks_like_food = bool(mapped) or any(
             name in GENERIC_FOOD_LABELS for name, _ in raw_labels
         )
+
+        weak = bool(mapped) and mapped[0].confidence < MIN_IDENTIFY_CONFIDENCE
+        if weak or (rejected_orange and not mapped):
+            # Too weak to name. Offer the candidates instead of asserting one.
+            shortlist = [p.food_name for p in mapped if p.confidence >= 0.05]
+            if is_red:
+                shortlist = list(RED_PRODUCE_SHORTLIST) + [
+                    n for n in shortlist if n not in RED_PRODUCE_SHORTLIST
+                ]
+            return Identification(
+                identified=False,
+                food_name=None,
+                confidence=0.0,
+                predictions=[
+                    Prediction(food_name=n, confidence=0.0, raw_label="shortlist")
+                    for n in shortlist
+                ],
+                raw_labels=raw_labels,
+                looks_like_food=True,
+                model_version=self.model_version,
+                note=(
+                    "The model is not sure what this is. Pick the food below and "
+                    "Fresora will assess it."
+                ),
+            )
 
         if mapped:
             top = mapped[0]
@@ -382,6 +433,20 @@ class FoodClassifier:
                 "name to continue -- the surface measurements below were still taken."
             ),
         )
+
+
+def _median_hue(image_bgr: np.ndarray) -> float | None:
+    """Median hue of the saturated pixels on the food, or None if too grey."""
+    import cv2  # noqa: PLC0415
+
+    from .metrics import segment_food  # noqa: PLC0415
+
+    mask, _, _ = segment_food(image_bgr)
+    hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
+    hue = hsv[:, :, 0][(mask > 0) & (hsv[:, :, 1] > 60)]
+    if hue.size < 500:
+        return None
+    return float(np.median(hue))
 
 
 #: Process-wide classifier. Built from settings on first import of the router.

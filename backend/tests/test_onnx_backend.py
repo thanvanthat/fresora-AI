@@ -248,3 +248,33 @@ class TestRealGraph:
         assert probs.shape == (1000,)
         assert probs.sum() == pytest.approx(1.0, abs=1e-5)
         assert (probs >= 0).all()
+
+
+class TestRedOrange:
+    """ImageNet files tomatoes under "orange"; colour has to overrule it."""
+
+    @staticmethod
+    def _classifier():
+        from types import SimpleNamespace
+
+        from app.vision.classifier import FoodClassifier
+
+        c = FoodClassifier()
+        c._onnx = SimpleNamespace(
+            class_index={0: "orange", 1: "strawberry", 2: "hip"}, version="t"
+        )
+        return c
+
+    RAW = np.array([0.45, 0.22, 0.13])
+
+    def test_red_orange_becomes_a_tomato_first_shortlist(self) -> None:
+        ident = self._classifier()._interpret_imagenet(self.RAW, 3, median_hue=4.0)
+
+        assert not ident.identified
+        assert ident.predictions[0].food_name == "Tomato"
+
+    def test_orange_coloured_orange_is_still_an_orange(self) -> None:
+        ident = self._classifier()._interpret_imagenet(self.RAW, 3, median_hue=14.0)
+
+        assert ident.identified
+        assert ident.food_name == "Orange"

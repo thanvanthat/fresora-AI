@@ -201,9 +201,10 @@ async def analyze(
         identified = identification.identified
         confidence = identification.confidence
         note = identification.note
+        # Identified: the rest are alternatives. Unidentified: all are a shortlist.
         alternatives = [
             AlternativeMatch(food_name=p.food_name, confidence=round(p.confidence, 4))
-            for p in identification.predictions[1:]
+            for p in identification.predictions[1 if identified else 0 :]
         ]
 
         if not identified:
