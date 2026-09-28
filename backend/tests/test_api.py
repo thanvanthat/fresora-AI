@@ -229,6 +229,78 @@ def test_vision_analysis_returns_measurements_only(client: TestClient) -> None:
     assert "status" not in body
 
 
+def test_detection_rescues_a_single_food_the_classifier_missed(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The classifier answers "what is this photo of", which fails when the
+    item is small or off-centre. The detector answers "where is the food" and
+    often succeeds there, so a miss must consult it before giving up."""
+    from app.routers import analyze as analyze_module
+    from app.vision.detector import Detection
+
+    class FakeDetector:
+        def detect(self, frame, **_):
+            return [Detection("Banana", "banana", 0.9, (0.1, 0.1, 0.5, 0.5))]
+
+    monkeypatch.setattr(analyze_module, "get_detector", lambda: FakeDetector())
+
+    body = client.post(f"{PREFIX}/analyze", files=_upload(_jpeg())).json()
+
+    assert body["identified"] is True
+    assert body["food_name"] == "Banana"
+    assert body["score"] > 0  # actually scored, not just named
+    # The response must say the answer came from a different model.
+    assert "ssd-mobilenet" in body["model_version"]
+
+
+def test_several_detected_foods_become_a_shortlist_not_a_guess(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fruit bowl has no single right answer.
+
+    Naming one would be arbitrary and scoring the whole frame would average
+    foods that spoil at different rates, so it stays unidentified and offers
+    what it found.
+    """
+    from app.routers import analyze as analyze_module
+    from app.vision.detector import Detection
+
+    class FakeDetector:
+        def detect(self, frame, **_):
+            return [
+                Detection("Banana", "banana", 0.9, (0.0, 0.0, 0.3, 0.3)),
+                Detection("Apple", "apple", 0.8, (0.4, 0.4, 0.7, 0.7)),
+            ]
+
+    monkeypatch.setattr(analyze_module, "get_detector", lambda: FakeDetector())
+
+    body = client.post(f"{PREFIX}/analyze", files=_upload(_jpeg())).json()
+
+    assert body["identified"] is False
+    assert body["score"] == 0
+    assert [a["food_name"] for a in body["alternatives"]] == ["Banana", "Apple"]
+    assert "several foods" in body["note"].lower()
+
+
+def test_a_failing_detector_never_fails_the_scan(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fallback is a bonus. A broken detector must not cost the user their
+    surface measurements."""
+    from app.routers import analyze as analyze_module
+
+    class ExplodingDetector:
+        def detect(self, frame, **_):
+            raise RuntimeError("detector exploded")
+
+    monkeypatch.setattr(analyze_module, "get_detector", lambda: ExplodingDetector())
+
+    response = client.post(f"{PREFIX}/analyze", files=_upload(_jpeg()))
+
+    assert response.status_code == 200
+    assert response.json()["identified"] is False
+
+
 def test_protein_hint_reaches_the_response(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

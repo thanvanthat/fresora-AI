@@ -212,11 +212,60 @@ async def analyze(
             for p in identification.predictions[1 if identified else 0 :]
         ]
 
+        # The classifier answers "what is this photo of", which assumes one
+        # item filling the frame. It returns nothing for a fruit bowl, and for
+        # an item that is small or off-centre. The detector answers a different
+        # question -- "where is the food" -- and often succeeds on exactly
+        # those photos, so ask it before giving up.
+        detected_foods: list[str] = []
+        detected_name: str | None = None
+        if not identified:
+            detector = get_detector()
+            if detector is not None:
+                try:
+                    detected_foods = [
+                        d.food_name for d in detector.detect(frame) if d.food_name
+                    ]
+                except Exception:  # pragma: no cover - never fail a scan for this
+                    logger.exception("Detector fallback failed")
+
+            unique_foods = list(dict.fromkeys(detected_foods))
+
+            # Exactly one kind of food in frame: the classifier missed it but
+            # the detector located it, which is a real identification and not a
+            # guess. Adopt it and score normally.
+            if len(unique_foods) == 1:
+                identified = True
+                detected_name = unique_foods[0]
+                confidence = 0.0  # from detection, not the classifier
+                model_version = f"{model_version}+ssd-mobilenet"
+                note = (
+                    "Identified by locating the food in the frame rather than "
+                    "from the photo as a whole."
+                )
+                alternatives = []
+
         if not identified:
             # We still measured the surface, but without a food name there is
             # nothing to score against. Report that honestly.
             metrics = measure_surface(frame, healthy_hue=None)
             elapsed = int((time.perf_counter() - started) * 1000)
+
+            # Several different foods in frame. Naming one would be arbitrary
+            # and scoring the whole photo would average them, so offer them as
+            # a shortlist and point at the scan built for this.
+            unique_foods = list(dict.fromkeys(detected_foods))
+            if len(unique_foods) > 1:
+                alternatives = [
+                    AlternativeMatch(food_name=name, confidence=0.0)
+                    for name in unique_foods
+                ]
+                note = (
+                    "This photo has several foods in it ("
+                    + ", ".join(unique_foods)
+                    + "). Use Scan several items to assess each one, or pick "
+                    "one below to score the whole photo as that food."
+                )
 
             # ImageNet has no class for raw meat, poultry or fish, which is
             # exactly the case that lands here most often. A small trained head
@@ -226,7 +275,13 @@ async def analyze(
             # protein from produce well and one species from another badly, so
             # the user still chooses, and the score still comes from that
             # choice and its high-risk cap.
-            hint_confidence = classifier.protein_hint(frame)
+            # Only when the detector found nothing. It names actual foods,
+            # which is strictly better than "this looks like raw protein", and
+            # running this unconditionally overwrote that shortlist with the
+            # vaguer one.
+            hint_confidence = (
+                None if detected_foods else classifier.protein_hint(frame)
+            )
             if hint_confidence is not None:
                 alternatives = [
                     AlternativeMatch(food_name=name, confidence=round(hint_confidence, 4))
@@ -275,7 +330,10 @@ async def analyze(
                 note=note or "The model could not identify this item.",
             )
 
-        resolved_name = identification.food_name or "Unidentified item"
+        # detected_name wins: it is set only when the classifier found nothing
+        # and the detector located exactly one food, so it is the more
+        # informed answer, and identification.food_name is None in that case.
+        resolved_name = detected_name or identification.food_name or "Unidentified item"
 
     # --- Knowledge --------------------------------------------------------
     record = knowledge.resolve(resolved_name)
