@@ -13,8 +13,12 @@ from ..knowledge.food_data import browning_applicable
 from ..knowledge.service import knowledge
 from ..narrative import action_for, build_narrative
 from ..schemas import (
+    SAFETY_NOTICE,
     AlternativeMatch,
     AnalysisResponse,
+    BoundingBox,
+    DetectedItem,
+    DetectResponse,
     FreshnessWindow,
     IdentifyResponse,
     ShelfLifeRequest,
@@ -27,6 +31,7 @@ from ..schemas import (
     VisualNarrative,
 )
 from ..vision.classifier import ModelUnavailableError, get_classifier
+from ..vision.detector import get_detector
 from ..vision.metrics import ImageDecodeError, decode_image, measure_surface
 
 logger = logging.getLogger(__name__)
@@ -358,6 +363,123 @@ async def analyze(
         model_version=model_version,
         mask_source=metrics.mask_source,
         note=note or None,
+    )
+
+
+@router.post("/detect", response_model=DetectResponse)
+async def detect_foods(image: UploadFile = File(...)) -> DetectResponse:
+    """Find every food item in one photo and score each separately.
+
+    This is the fridge-shelf case. ``/analyze`` assumes a single item filling
+    the frame; here each detected object is cropped and measured on its own, so
+    a bruised banana beside a sound apple produces two scores rather than one
+    average that describes neither.
+
+    Returns 200 with an empty list when nothing food-like is found. That is a
+    real answer -- the photo may hold no food, or only foods COCO has no class
+    for -- and the client shows it as such rather than as a failure.
+    """
+    started = time.perf_counter()
+    data = await _read_upload(image)
+    frame = _decode_or_400(data)
+
+    detector = get_detector()
+    if detector is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "model_unavailable",
+                "message": "Object detection is not available in this deployment.",
+            },
+        )
+
+    detections = detector.detect(frame)
+    items: list[DetectedItem] = []
+
+    for detection in detections:
+        record = (
+            knowledge.resolve(detection.food_name) if detection.food_name else None
+        )
+
+        if record is None:
+            # Detected and locatable, but nothing to score it against. Say so
+            # with nulls rather than inventing a number for an unknown food.
+            items.append(
+                DetectedItem(
+                    food_name=detection.food_name,
+                    raw_label=detection.raw_label,
+                    detection_confidence=detection.confidence,
+                    box=BoundingBox(
+                        x1=detection.box[0],
+                        y1=detection.box[1],
+                        x2=detection.box[2],
+                        y2=detection.box[3],
+                    ),
+                    known_food=False,
+                )
+            )
+            continue
+
+        # Measure the crop, not the whole frame: the surrounding shelf would
+        # otherwise dominate the colour and texture statistics.
+        crop = detection.crop(frame)
+        metrics = measure_surface(
+            crop,
+            healthy_hue=record.healthy_hue,
+            measure_browning=browning_applicable(record.name),
+        )
+        assessment = assess(metrics, record.category, record)
+        typical = knowledge.get_typical_shelf_life(record.name)
+        window = estimate_window(assessment.score, assessment.status, typical)
+
+        items.append(
+            DetectedItem(
+                food_name=record.name,
+                raw_label=detection.raw_label,
+                category=record.category,  # type: ignore[arg-type]
+                detection_confidence=detection.confidence,
+                box=BoundingBox(
+                    x1=detection.box[0],
+                    y1=detection.box[1],
+                    x2=detection.box[2],
+                    y2=detection.box[3],
+                ),
+                known_food=True,
+                status=assessment.status,  # type: ignore[arg-type]
+                score=assessment.score,
+                estimated_window=FreshnessWindow(
+                    min_days=window[0], max_days=window[1]
+                ),
+                visual_metrics=VisualMetrics(**metrics.as_dict()),
+                recommended_action=action_for(
+                    assessment.status, record.category in HIGH_RISK_CATEGORIES
+                ),
+            )
+        )
+
+    unknown = [i.raw_label for i in items if not i.known_food]
+    note = None
+    if unknown:
+        note = (
+            "Found "
+            + ", ".join(sorted(set(unknown)))
+            + ", which Fresora has no reference data for. Name them to get a score."
+        )
+    elif not items:
+        note = (
+            "No food was found in this photo. Detection covers bananas, apples, "
+            "oranges, broccoli and carrots; for anything else, scan it on its own "
+            "and name it."
+        )
+
+    return DetectResponse(
+        detected=bool(items),
+        count=len(items),
+        items=items,
+        processing_ms=int((time.perf_counter() - started) * 1000),
+        model_version="ssd-mobilenet-v1-coco",
+        note=note,
+        safety_notice=SAFETY_NOTICE,
     )
 
 

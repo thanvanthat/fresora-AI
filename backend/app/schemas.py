@@ -104,6 +104,48 @@ class IdentifyResponse(BaseModel):
     note: str | None = None
 
 
+class BoundingBox(BaseModel):
+    """Normalised to 0-1 of the frame, so a client can draw it at any preview
+    size without knowing the resolution the analysis ran at."""
+
+    x1: float = Field(ge=0.0, le=1.0)
+    y1: float = Field(ge=0.0, le=1.0)
+    x2: float = Field(ge=0.0, le=1.0)
+    y2: float = Field(ge=0.0, le=1.0)
+
+
+class DetectedItem(BaseModel):
+    """One food object located in a multi-item photo.
+
+    Scoring fields are null for a food with no reference data: the object was
+    found and can be named by the user, but nothing has been scored against it.
+    Reporting the box without a score is honest; inventing a score is not.
+    """
+
+    food_name: str | None = None
+    raw_label: str
+    category: FoodCategory | None = None
+    detection_confidence: float = Field(ge=0.0, le=1.0)
+    box: BoundingBox
+    known_food: bool
+
+    status: FoodStatus | None = None
+    score: int | None = Field(default=None, ge=0, le=100)
+    estimated_window: FreshnessWindow | None = None
+    visual_metrics: VisualMetrics | None = None
+    recommended_action: str | None = None
+
+
+class DetectResponse(BaseModel):
+    detected: bool
+    count: int = Field(ge=0)
+    items: list[DetectedItem] = Field(default_factory=list)
+    processing_ms: int = Field(ge=0)
+    model_version: str
+    note: str | None = None
+    safety_notice: str
+
+
 class VisionAnalysisResponse(BaseModel):
     """Raw measurements only -- no identification, no score."""
 
