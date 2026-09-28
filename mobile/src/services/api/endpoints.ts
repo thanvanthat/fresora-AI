@@ -136,6 +136,43 @@ export const analyzeImage = (
     { signal: options.signal },
   );
 
+/** One food object located in a multi-item photo. */
+export interface DetectedItem {
+  food_name: string | null;
+  raw_label: string;
+  category: FoodCategory | null;
+  detection_confidence: number;
+  /** Normalised 0-1 of the frame, so it can be drawn at any preview size. */
+  box: { x1: number; y1: number; x2: number; y2: number };
+  known_food: boolean;
+  /** Null for a food with no reference data: found, but nothing scored. */
+  status: FoodStatus | null;
+  score: number | null;
+  estimated_window: { min_days: number; max_days: number } | null;
+  visual_metrics: Record<string, number | null> | null;
+  recommended_action: string | null;
+}
+
+export interface DetectResponse {
+  detected: boolean;
+  count: number;
+  items: DetectedItem[];
+  processing_ms: number;
+  model_version: string;
+  note: string | null;
+  safety_notice: string;
+}
+
+/**
+ * Finds every food item in one photo and scores each separately.
+ *
+ * Distinct from `analyzeImage`, which assumes a single item filling the frame.
+ * An empty `items` array with 200 is a real answer, not a failure: the photo
+ * may hold no food, or only foods the detector has no class for.
+ */
+export const detectFoods = (file: UploadField, signal?: AbortSignal) =>
+  apiUpload<DetectResponse>('/detect', file, {}, { signal });
+
 export const identifyFood = (file: UploadField, signal?: AbortSignal) =>
   apiUpload<{
     identified: boolean;

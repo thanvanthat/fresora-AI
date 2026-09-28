@@ -56,16 +56,49 @@ export default function ScanScreen() {
   const setPendingScan = useAppStore((state) => state.setPendingScan);
 
   /** Hands an image to the analysis route. */
+  /**
+   * Hands an image to a result route.
+   *
+   * Both routes read the same pendingScan, so the only difference is which
+   * screen opens: /analysis treats the photo as one item, /detection splits
+   * it into several. Choosing is the user's call because the two answer
+   * different questions, and guessing from the image would sometimes route a
+   * deliberate close-up into a multi-item list.
+   */
   const startAnalysis = useCallback(
-    (uri: string) => {
+    (uri: string, route: '/analysis' | '/detection' = '/analysis') => {
       setPendingScan({
         imageUri: uri,
         categoryHint: category === 'auto' ? undefined : category,
       });
-      router.push('/analysis');
+      router.push(route);
     },
     [category, router, setPendingScan],
   );
+
+  const onPickGalleryMulti = useCallback(async () => {
+    const result = await pickFromGallery();
+
+    if (result.permissionDenied) {
+      toast.show(t('errors.galleryPermissionBody'), 'error');
+      return;
+    }
+    if (result.cancelled) return;
+
+    startAnalysis(result.uri, '/detection');
+  }, [startAnalysis, t, toast]);
+
+  const onCaptureWebMulti = useCallback(async () => {
+    const result = await captureFromCamera();
+
+    if (result.permissionDenied) {
+      toast.show(t('scanner.permissionDeniedBody'), 'error');
+      return;
+    }
+    if (result.cancelled) return;
+
+    startAnalysis(result.uri, '/detection');
+  }, [startAnalysis, t, toast]);
 
   const onCapture = useCallback(async () => {
     if (!cameraRef.current || capturing) return;
@@ -140,6 +173,27 @@ export default function ScanScreen() {
             variant="secondary"
             onPress={onPickGallery}
           />
+        </View>
+
+        {/* Separate entry point rather than a mode switch: the two answer
+            different questions, and a photo of one apple should not come back
+            as a list of one. */}
+        <View style={styles.multiActions}>
+          <Caption align="center">{t('detection.multiPrompt')}</Caption>
+          <View style={styles.permissionActions}>
+            <Button
+              label={t('detection.scanMultiple')}
+              icon="box"
+              variant="secondary"
+              onPress={onCaptureWebMulti}
+            />
+            <Button
+              label={t('detection.pickMultiple')}
+              icon="gallery"
+              variant="ghost"
+              onPress={onPickGalleryMulti}
+            />
+          </View>
         </View>
       </View>
     );
@@ -344,6 +398,13 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     gap: spacing.md,
     marginTop: spacing.xl,
+  },
+  multiActions: {
+    alignSelf: 'stretch',
+    marginTop: spacing.xxl,
+    paddingTop: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   topBar: {
     flexDirection: 'row',
