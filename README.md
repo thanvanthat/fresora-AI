@@ -342,10 +342,36 @@ Both paths are real. Nothing is fabricated, and the UI says which one ran.
 To enable generation, set in `backend/.env`:
 
 ```
-LLM_PROVIDER=anthropic
+LLM_PROVIDER=anthropic     # anthropic | openai | gemini
 LLM_API_KEY=sk-ant-...
 LLM_MODEL=claude-sonnet-5
 ```
+
+#### Gemini
+
+Setting `GEMINI_API_KEY` alone is enough — it selects the provider and a
+Gemini model, so there is no half-configured state where the key is set but
+requests still go to Anthropic:
+
+```
+GEMINI_API_KEY=AIza...
+GEMINI_MODEL=gemini-2.0-flash
+```
+
+Get a key from <https://aistudio.google.com/apikey>. **It starts with `AIza`.**
+A value starting with `AQ.` or `ya29.` is an OAuth access token, not an API
+key: it expires within the hour and the API rejects it with a 401.
+
+**In production this belongs in your host's encrypted environment variables,
+never in a file.** On Vercel: project → Settings → Environment Variables, type
+*Sensitive*, then redeploy — variables are read at deploy time, so setting one
+does not affect the deployment already running. Confirm with
+`GET /api/v1/health`, which reports `llm_configured`.
+
+Never put an LLM key in `mobile/.env`. Every `EXPO_PUBLIC_*` value is compiled
+into the app bundle and readable by anyone holding the APK; there is no such
+thing as a secret in a mobile build. A key that has been pasted into a chat,
+a screenshot or a commit should be treated as public and rotated.
 
 Even with a key, the LLM is constrained: it is given the curated records and
 told not to contradict them, it is forbidden from ruling on food safety, and a
@@ -361,8 +387,10 @@ in favour of the rules path.
 | `mobile/.env` | `EXPO_PUBLIC_API_BASE_URL` | Backend URL. Empty = auto-detect. |
 | | `EXPO_PUBLIC_SUPABASE_URL` | Optional. Enables accounts. |
 | | `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Optional. **Anon key only.** |
-| `backend/.env` | `LLM_PROVIDER` | `anthropic` or `openai`. |
+| `backend/.env` | `LLM_PROVIDER` | `anthropic`, `openai` or `gemini`. |
 | | `LLM_API_KEY` | Optional. Server-side only. |
+| | `GEMINI_API_KEY` | Optional. Selects Gemini on its own. |
+| | `GEMINI_MODEL` | Optional, default `gemini-2.0-flash`. |
 | | `MODEL_PATH` | Optional. Fine-tuned model. |
 | | `MAX_IMAGE_EDGE` | Resize cap, default 1024. |
 | | `MAX_UPLOAD_BYTES` | Default 12 MB. |
