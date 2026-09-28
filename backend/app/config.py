@@ -26,6 +26,44 @@ def _env_list(name: str, default: list[str]) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+#: Sensible model per provider, used when no model is named explicitly.
+_DEFAULT_MODELS: dict[str, str] = {
+    "anthropic": "claude-sonnet-5",
+    "openai": "gpt-4o-mini",
+    "gemini": "gemini-2.0-flash",
+}
+
+
+def _resolve_provider() -> str:
+    """LLM_PROVIDER, or gemini when only GEMINI_API_KEY is set."""
+    explicit = os.getenv("LLM_PROVIDER", "").strip().lower()
+    if explicit:
+        return explicit
+    if os.getenv("GEMINI_API_KEY"):
+        return "gemini"
+    return "anthropic"
+
+
+def _resolve_model() -> str:
+    """LLM_MODEL, then GEMINI_MODEL, then the provider's default.
+
+    Falling back to the provider's own default matters: carrying an Anthropic
+    model name into a Gemini request fails with a 404 that reads like a
+    connectivity problem.
+    """
+    explicit = os.getenv("LLM_MODEL", "").strip()
+    if explicit:
+        return explicit
+
+    provider = _resolve_provider()
+    if provider == "gemini":
+        gemini_model = os.getenv("GEMINI_MODEL", "").strip()
+        if gemini_model:
+            return gemini_model
+
+    return _DEFAULT_MODELS.get(provider, _DEFAULT_MODELS["anthropic"])
+
+
 @dataclass(frozen=True)
 class Settings:
     """Immutable settings snapshot."""
@@ -51,13 +89,22 @@ class Settings:
     )
 
     # --- LLM provider -----------------------------------------------------
-    llm_provider: str = field(
-        default_factory=lambda: os.getenv("LLM_PROVIDER", "anthropic").strip().lower()
+    #
+    # Two sets of names work. The generic LLM_* ones are provider-neutral and
+    # win when both are present. GEMINI_API_KEY / GEMINI_MODEL are accepted
+    # because that is what most Gemini documentation tells people to set, and
+    # a key in a variable the app ignores looks identical to a broken key.
+    #
+    # Setting GEMINI_API_KEY alone is enough: it selects the provider and the
+    # model too, so there is no half-configured state where the key is present
+    # but requests still go to Anthropic.
+    llm_provider: str = field(default_factory=lambda: _resolve_provider())
+    llm_api_key: str = field(
+        default_factory=lambda: (
+            os.getenv("LLM_API_KEY") or os.getenv("GEMINI_API_KEY", "")
+        )
     )
-    llm_api_key: str = field(default_factory=lambda: os.getenv("LLM_API_KEY", ""))
-    llm_model: str = field(
-        default_factory=lambda: os.getenv("LLM_MODEL", "claude-sonnet-5")
-    )
+    llm_model: str = field(default_factory=lambda: _resolve_model())
     llm_timeout_seconds: float = field(
         default_factory=lambda: float(os.getenv("LLM_TIMEOUT_SECONDS", "45"))
     )

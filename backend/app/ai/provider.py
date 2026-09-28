@@ -187,9 +187,107 @@ class OpenAIProvider(AIProvider):
         return text
 
 
+class GeminiProvider(AIProvider):
+    """Google Gemini via the Generative Language REST API.
+
+    Called over plain HTTP like the other two providers rather than through
+    ``google-genai``. The SDK would add a dependency and ~10 MB to a serverless
+    bundle that already carries OpenCV and onnxruntime, to wrap one POST. (The
+    ``@google/genai`` package named in the brief is the JavaScript SDK; this
+    backend is Python.)
+
+    Gemini's request shape differs from the OpenAI-style one in three ways that
+    each cause a silent failure rather than an error if missed: the system
+    prompt is its own ``system_instruction`` field, not a message with
+    ``role: "system"``; the assistant role is called ``model``; and message
+    text lives in a ``parts`` array.
+    """
+
+    name = "gemini"
+
+    BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+
+    def __init__(self, api_key: str, model: str, timeout: float) -> None:
+        self._api_key = api_key
+        self._model = model
+        self._timeout = timeout
+
+    async def complete(
+        self,
+        system: str,
+        messages: list[dict[str, str]],
+        *,
+        max_tokens: int,
+        temperature: float = 0.4,
+    ) -> str:
+        contents = [
+            {
+                # Gemini names the assistant "model"; sending "assistant" is
+                # rejected, and sending "system" here is silently ignored.
+                "role": "model" if message.get("role") == "assistant" else "user",
+                "parts": [{"text": message.get("content", "")}],
+            }
+            for message in messages
+        ]
+
+        payload: dict[str, Any] = {
+            "contents": contents,
+            "systemInstruction": {"parts": [{"text": system}]},
+            "generationConfig": {
+                "maxOutputTokens": max_tokens,
+                "temperature": temperature,
+            },
+        }
+
+        # The key goes in a header, not the query string: a URL with the key in
+        # it lands in proxy and server logs.
+        headers = {
+            "x-goog-api-key": self._api_key,
+            "content-type": "application/json",
+        }
+        url = f"{self.BASE_URL}/{self._model}:generateContent"
+
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.post(url, json=payload, headers=headers)
+        except httpx.HTTPError as exc:
+            raise AIProviderError(f"could not reach the AI provider: {exc}") from exc
+
+        if response.status_code != 200:
+            # Never include the body: Gemini echoes request detail in errors.
+            raise AIProviderError(f"AI provider returned HTTP {response.status_code}")
+
+        body = response.json()
+        candidates = body.get("candidates") or []
+        if not candidates:
+            # No candidates usually means the prompt tripped a safety filter,
+            # which is a real outcome the caller must fall back from rather
+            # than an empty string presented as an answer.
+            reason = (body.get("promptFeedback") or {}).get("blockReason")
+            raise AIProviderError(
+                f"AI provider returned no candidates (blockReason={reason})"
+                if reason
+                else "AI provider returned no candidates"
+            )
+
+        parts = (candidates[0].get("content") or {}).get("parts") or []
+        text = "".join(part.get("text", "") for part in parts)
+        if not text.strip():
+            # A truncated response has no text but a MAX_TOKENS finish reason;
+            # saying which makes the difference obvious in the logs.
+            finish = candidates[0].get("finishReason")
+            raise AIProviderError(
+                f"AI provider returned an empty response (finishReason={finish})"
+                if finish
+                else "AI provider returned an empty response"
+            )
+        return text
+
+
 _PROVIDERS: dict[str, type[AIProvider]] = {
     "anthropic": AnthropicProvider,
     "openai": OpenAIProvider,
+    "gemini": GeminiProvider,
 }
 
 
