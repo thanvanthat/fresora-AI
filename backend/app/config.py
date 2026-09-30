@@ -30,7 +30,7 @@ def _env_list(name: str, default: list[str]) -> list[str]:
 _DEFAULT_MODELS: dict[str, str] = {
     "anthropic": "claude-sonnet-5",
     "openai": "gpt-4o-mini",
-    "gemini": "gemini-2.5-flash",
+    "gemini": "gemini-flash-latest",
 }
 
 

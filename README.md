@@ -373,7 +373,7 @@ requests still go to Anthropic:
 
 ```
 GEMINI_API_KEY=AIza...
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-flash-latest
 ```
 
 Get a key from <https://aistudio.google.com/apikey>. Google issues more than
@@ -415,7 +415,7 @@ in favour of the rules path.
 | `backend/.env` | `LLM_PROVIDER` | `anthropic`, `openai` or `gemini`. |
 | | `LLM_API_KEY` | Optional. Server-side only. |
 | | `GEMINI_API_KEY` | Optional. Selects Gemini on its own. |
-| | `GEMINI_MODEL` | Optional, default `gemini-2.5-flash`. |
+| | `GEMINI_MODEL` | Optional, default `gemini-flash-latest`. |
 | | `MODEL_PATH` | Optional. Fine-tuned model. |
 | | `MAX_IMAGE_EDGE` | Resize cap, default 1024. |
 | | `MAX_UPLOAD_BYTES` | Default 12 MB. |
