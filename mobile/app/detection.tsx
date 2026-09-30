@@ -11,6 +11,7 @@ import { Gutter, Screen } from '../src/components/Screen';
 import { EmptyState, ErrorState, SafetyNotice } from '../src/components/States';
 import { Body, Caption, Label, Title } from '../src/components/Text';
 import { useToast } from '../src/components/Toast';
+import { STATUS_META } from '../src/constants/status';
 import { useDetectFoods } from '../src/hooks/useDetection';
 import { useAddInventoryItem } from '../src/hooks/useInventory';
 import { useTranslation } from '../src/i18n';
@@ -322,7 +323,12 @@ function ItemRow({
         <Label>{label}</Label>
         {item.known_food && item.status ? (
           <Caption>
-            {t(`status.${item.status}`)} · {item.score}/100
+            {/* STATUS_META, not `status.${item.status}`: the API returns
+                snake_case ("nearly_spoiled") while the locale keys are
+                camelCase ("nearlySpoiled"), so interpolating the status
+                rendered the raw key on screen for every status except
+                "fresh", which happens to match in both. */}
+            {t(STATUS_META[item.status].labelKey)} · {item.score}/100
           </Caption>
         ) : (
           // Detected but unscored. Saying so beats a blank line, and beats
