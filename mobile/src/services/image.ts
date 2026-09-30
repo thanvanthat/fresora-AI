@@ -1,6 +1,9 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
+import { Platform } from 'react-native';
+
+import { clearImages, isStoredImage, removeImage, storeImage } from './imageStore';
 
 import { IMAGE_COMPRESSION, IMAGE_MAX_DIMENSION } from '../constants/config';
 import type { UploadField } from './api/client';
@@ -67,6 +70,12 @@ export async function prepareForUpload(uri: string): Promise<PreparedImage> {
  * lose the scan itself.
  */
 export async function persistImage(uri: string, id: string): Promise<string | null> {
+  // Web has no expo-file-system, so the block below silently returned null and
+  // every saved item showed a placeholder. IndexedDB takes its place there.
+  if (Platform.OS === 'web') {
+    return storeImage(uri, id);
+  }
+
   try {
     const directory = new Directory(Paths.document, IMAGE_DIR);
     if (!directory.exists) {
@@ -87,6 +96,12 @@ export async function persistImage(uri: string, id: string): Promise<string | nu
 /** Deletes a stored image. Silent on failure -- a leftover file is harmless. */
 export async function deleteStoredImage(uri: string | null): Promise<void> {
   if (!uri) return;
+
+  if (isStoredImage(uri)) {
+    await removeImage(uri);
+    return;
+  }
+
   try {
     const file = new File(uri);
     if (file.exists) file.delete();
@@ -97,6 +112,13 @@ export async function deleteStoredImage(uri: string | null): Promise<void> {
 
 /** Removes every stored food image. Used by "delete account and data". */
 export async function deleteAllStoredImages(): Promise<void> {
+  // "Delete account and data" must clear the web store too, or photos would
+  // outlive the rows that referenced them.
+  if (Platform.OS === 'web') {
+    await clearImages();
+    return;
+  }
+
   try {
     const directory = new Directory(Paths.document, IMAGE_DIR);
     if (directory.exists) directory.delete();

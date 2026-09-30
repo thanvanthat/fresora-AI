@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import { useEffect, useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -9,6 +10,7 @@ import {
 } from 'react-native';
 
 import { STATUS_META } from '../constants/status';
+import { isStoredImage, resolveImage } from '../services/imageStore';
 import { useTranslation } from '../i18n';
 import { colors, palette, radius, shadows, spacing, statusColors } from '../theme';
 import type { FoodCategory, FoodStatus } from '../types';
@@ -52,7 +54,13 @@ export function FoodImage({
   rounded = radius.md,
   style,
 }: FoodImageProps) {
-  if (!uri) {
+  // On web, photos live in IndexedDB and items store an `idb://<id>`
+  // reference rather than a URL, because an object URL is only valid for the
+  // page that made it and would be a dead link after a reload. Resolving here
+  // keeps every caller passing a plain `image_uri` as before.
+  const resolvedUri = useStoredImageUri(uri);
+
+  if (!resolvedUri) {
     return (
       <View
         style={[
@@ -68,7 +76,7 @@ export function FoodImage({
 
   return (
     <Image
-      source={{ uri }}
+      source={{ uri: resolvedUri }}
       style={[{ width: size, height: size, borderRadius: rounded }, style]}
       contentFit="cover"
       transition={180}
@@ -76,6 +84,35 @@ export function FoodImage({
       accessibilityIgnoresInvertColors
     />
   );
+}
+
+/**
+ * Renderable URI for a possibly-stored photo.
+ *
+ * A plain file:// or blob: URI is returned unchanged and synchronously, so
+ * native and the first paint are unaffected. Only an `idb://` reference costs
+ * a lookup, and the store caches the resolved object URL, so a list
+ * re-rendering does not create a new one per row per frame.
+ */
+function useStoredImageUri(uri?: string | null): string | null {
+  const stored = isStoredImage(uri);
+  const [resolved, setResolved] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!uri || !stored) return;
+
+    let active = true;
+    resolveImage(uri).then((value) => {
+      // The row may have scrolled away before the lookup finished.
+      if (active) setResolved(value);
+    });
+    return () => {
+      active = false;
+    };
+  }, [uri, stored]);
+
+  if (!uri) return null;
+  return stored ? resolved : uri;
 }
 
 interface FoodCardProps {
