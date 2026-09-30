@@ -92,8 +92,11 @@ export async function storeImage(uri: string, id: string): Promise<string | null
     const blob = await toThumbnailBlob(uri);
     await transact('readwrite', (store) => store.put(blob, id));
     return `${IDB_SCHEME}${id}`;
-  } catch {
-    // Matches the native path: losing a thumbnail must never lose the scan.
+  } catch (error) {
+    // Still swallowed -- losing a thumbnail must never lose the scan, which is
+    // the native path's rule too. But it is logged: a silent catch here turned
+    // "photos do not save" into a bug with no trace at all to follow.
+    console.warn('[imageStore] could not store photo', error);
     return null;
   }
 }
