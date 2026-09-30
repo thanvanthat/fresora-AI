@@ -8,6 +8,7 @@ the response -- they never fabricate a generated answer.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -18,6 +19,14 @@ import httpx
 from ..config import Settings
 
 logger = logging.getLogger(__name__)
+
+#: Statuses worth another attempt: the request was fine, the service was not.
+#: 429 is rate limiting, the 5xx are transient capacity problems.
+RETRYABLE_STATUSES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+
+#: Seconds to wait before each retry. Two attempts after the first, because a
+#: third rarely helps within a request a user is waiting on.
+RETRY_BACKOFF: tuple[float, ...] = (0.8, 2.0)
 
 
 class AIProviderError(RuntimeError):
@@ -267,11 +276,30 @@ class GeminiProvider(AIProvider):
         }
         url = f"{self.BASE_URL}/{self._model}:generateContent"
 
-        try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.post(url, json=payload, headers=headers)
-        except httpx.HTTPError as exc:
-            raise AIProviderError(f"could not reach the AI provider: {exc}") from exc
+        # Gemini's free tier returns 503 "high demand" intermittently -- two in
+        # five calls, measured. Without a retry that surfaced as the assistant
+        # and recipe generation silently dropping to their fallbacks for no
+        # reason the user could see or act on.
+        response = None
+        for attempt in range(len(RETRY_BACKOFF) + 1):
+            try:
+                async with httpx.AsyncClient(timeout=self._timeout) as client:
+                    response = await client.post(url, json=payload, headers=headers)
+            except httpx.HTTPError as exc:
+                raise AIProviderError(f"could not reach the AI provider: {exc}") from exc
+
+            if response.status_code not in RETRYABLE_STATUSES:
+                break
+
+            if attempt < len(RETRY_BACKOFF):
+                logger.info(
+                    "Gemini returned %s; retrying in %.1fs",
+                    response.status_code,
+                    RETRY_BACKOFF[attempt],
+                )
+                await asyncio.sleep(RETRY_BACKOFF[attempt])
+
+        assert response is not None  # the loop always assigns or raises
 
         if response.status_code != 200:
             # Gemini's 400 covers an invalid key, an unknown model and a

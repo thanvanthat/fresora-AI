@@ -191,6 +191,84 @@ class TestFailureModes:
         assert "400" in message
 
     @pytest.mark.asyncio
+    async def test_a_transient_503_is_retried(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Gemini's free tier returns 503 "high demand" intermittently.
+
+        Measured at two failures in five calls, so without a retry the
+        assistant and recipes drop to their fallbacks for no reason the user
+        can see.
+        """
+        calls = {"n": 0}
+
+        def handler(url: str, payload: dict, headers: dict) -> httpx.Response:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return httpx.Response(
+                    503,
+                    json={"error": {"status": "UNAVAILABLE", "message": "high demand"}},
+                    request=httpx.Request("POST", "https://example.invalid"),
+                )
+            return _ok("second time lucky")
+
+        monkeypatch.setattr(httpx, "AsyncClient", _client(handler))
+        monkeypatch.setattr("app.ai.provider.RETRY_BACKOFF", (0.0, 0.0))
+        provider = GeminiProvider("k", "m", 10.0)
+
+        result = await provider.complete(
+            "s", [{"role": "user", "content": "q"}], max_tokens=64
+        )
+
+        assert result == "second time lucky"
+        assert calls["n"] == 2
+
+    @pytest.mark.asyncio
+    async def test_retries_are_bounded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A user is waiting on this request; it cannot retry indefinitely."""
+        calls = {"n": 0}
+
+        def handler(url: str, payload: dict, headers: dict) -> httpx.Response:
+            calls["n"] += 1
+            return httpx.Response(
+                503,
+                json={"error": {"status": "UNAVAILABLE", "message": "high demand"}},
+                request=httpx.Request("POST", "https://example.invalid"),
+            )
+
+        monkeypatch.setattr(httpx, "AsyncClient", _client(handler))
+        monkeypatch.setattr("app.ai.provider.RETRY_BACKOFF", (0.0, 0.0))
+        provider = GeminiProvider("k", "m", 10.0)
+
+        with pytest.raises(AIProviderError, match="UNAVAILABLE"):
+            await provider.complete("s", [{"role": "user", "content": "q"}], max_tokens=64)
+
+        assert calls["n"] == 3  # the first attempt plus two retries
+
+    @pytest.mark.asyncio
+    async def test_a_bad_key_is_not_retried(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Retrying a 400 wastes the user's time: the request will never work."""
+        calls = {"n": 0}
+
+        def handler(url: str, payload: dict, headers: dict) -> httpx.Response:
+            calls["n"] += 1
+            return httpx.Response(
+                400,
+                json={"error": {"status": "INVALID_ARGUMENT", "message": "bad key"}},
+                request=httpx.Request("POST", "https://example.invalid"),
+            )
+
+        monkeypatch.setattr(httpx, "AsyncClient", _client(handler))
+        provider = GeminiProvider("k", "m", 10.0)
+
+        with pytest.raises(AIProviderError):
+            await provider.complete("s", [{"role": "user", "content": "q"}], max_tokens=64)
+
+        assert calls["n"] == 1
+
+    @pytest.mark.asyncio
     async def test_an_unknown_model_is_reported_as_such(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
