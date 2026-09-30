@@ -33,9 +33,9 @@ export const isStoredImage = (uri: string | null | undefined): boolean =>
 
 export const idFromUri = (uri: string): string => uri.slice(IDB_SCHEME.length);
 
-function openDatabase(): Promise<IDBDatabase> {
+function open(version?: number): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    const request = indexedDB.open(DB_NAME, version);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
@@ -43,6 +43,24 @@ function openDatabase(): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
+}
+
+async function openDatabase(): Promise<IDBDatabase> {
+  let db = await open(DB_VERSION);
+
+  // A database can exist at the right version and still have no object store:
+  // any code that opens it without an upgrade handler creates it empty, and
+  // after that `onupgradeneeded` never fires again at that version, so every
+  // transaction throws NotFoundError forever. Bumping the version is the only
+  // way back, and without this the store would be permanently unusable rather
+  // than self-healing.
+  if (!db.objectStoreNames.contains(STORE)) {
+    const next = db.version + 1;
+    db.close();
+    db = await open(next);
+  }
+
+  return db;
 }
 
 function transact<T>(
