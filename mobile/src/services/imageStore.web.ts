@@ -17,7 +17,6 @@
  */
 
 const DB_NAME = 'fresora-images';
-const DB_VERSION = 1;
 const STORE = 'images';
 
 /** Marks a value as a key into this store rather than a real URL. */
@@ -46,14 +45,18 @@ function open(version?: number): Promise<IDBDatabase> {
 }
 
 async function openDatabase(): Promise<IDBDatabase> {
-  let db = await open(DB_VERSION);
+  // Opened with no version: whatever exists. Naming a fixed version here
+  // throws VersionError as soon as the database is ahead of it, which the
+  // repair below can cause -- so a hardcoded version would break every read
+  // after the first repair.
+  let db = await open();
 
-  // A database can exist at the right version and still have no object store:
-  // any code that opens it without an upgrade handler creates it empty, and
-  // after that `onupgradeneeded` never fires again at that version, so every
-  // transaction throws NotFoundError forever. Bumping the version is the only
-  // way back, and without this the store would be permanently unusable rather
-  // than self-healing.
+  // A database can exist and still have no object store: anything that opens
+  // it without an upgrade handler creates it empty, and `onupgradeneeded`
+  // never fires again at that version, so every transaction throws
+  // NotFoundError forever. Reopening one version higher runs the upgrade path
+  // and creates the store, making this self-healing rather than permanently
+  // broken.
   if (!db.objectStoreNames.contains(STORE)) {
     const next = db.version + 1;
     db.close();
