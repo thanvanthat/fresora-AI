@@ -6,7 +6,7 @@ change a field here, change it there too -- the mobile app is a direct consumer.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -15,6 +15,12 @@ FoodCategory = Literal[
     "fruit", "vegetable", "meat", "poultry", "seafood", "dairy", "bakery", "other"
 ]
 StorageType = Literal["pantry", "refrigerated", "frozen", "counter"]
+
+#: The same names as a runtime set, for validating values that arrive as plain
+#: strings (a form field, or a vision model's JSON). Derived from the Literal so
+#: the two can never drift apart.
+FOOD_CATEGORIES: frozenset[str] = frozenset(get_args(FoodCategory))
+STORAGE_TYPES: frozenset[str] = frozenset(get_args(StorageType))
 
 #: The single safety notice shown wherever an assessment is displayed.
 SAFETY_NOTICE = (

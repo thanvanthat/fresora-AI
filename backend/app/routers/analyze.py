@@ -7,13 +7,16 @@ import time
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
+from ..ai.identify import identify_food as identify_with_vision
 from ..config import get_settings
 from ..freshness import HIGH_RISK_CATEGORIES, assess, estimate_window
 from ..knowledge.food_data import browning_applicable
 from ..knowledge.service import knowledge
 from ..narrative import action_for, build_narrative
 from ..schemas import (
+    FOOD_CATEGORIES,
     SAFETY_NOTICE,
+    STORAGE_TYPES,
     AlternativeMatch,
     AnalysisResponse,
     BoundingBox,
@@ -178,6 +181,7 @@ async def analyze(
     note: str | None = None
     model_version = "user-specified"
 
+    vision_category: str | None = None
     if food_name and food_name.strip():
         resolved_name = food_name.strip()
     else:
@@ -230,6 +234,33 @@ async def analyze(
                 note = (
                     "Identified by locating the food in the frame rather than "
                     "from the photo as a whole."
+                )
+                alternatives = []
+
+        # Last resort before giving up: ask the vision model to name it.
+        #
+        # This is the case both local models are structurally unable to cover.
+        # ImageNet has ~30 food classes and COCO has 10, all of sound Western
+        # produce, so a bitter gourd, an idli or a mouldy loaf has no class to
+        # land in and never will. A vision model has no class list at all.
+        #
+        # It names the food and nothing else -- the score still comes from the
+        # measured OpenCV features below, and storage advice still comes from
+        # the curated knowledge base -- so a wrong name costs a wrong label the
+        # user can correct, never a fabricated freshness figure.
+        if not identified:
+            seen = await identify_with_vision(
+                data, mime_type=image.content_type or "image/jpeg"
+            )
+            if seen is not None and not seen.multiple:
+                identified = True
+                detected_name = seen.food_name
+                vision_category = seen.category
+                confidence = seen.confidence
+                model_version = f"{model_version}+vision"
+                note = (
+                    "Identified by the vision model, which recognises foods "
+                    "the on-device models have no class for."
                 )
                 alternatives = []
 
@@ -317,16 +348,12 @@ async def analyze(
 
     if record is not None:
         category = record.category
-    elif category_hint in {
-        "fruit",
-        "vegetable",
-        "meat",
-        "poultry",
-        "seafood",
-        "dairy",
-        "bakery",
-        "other",
-    }:
+    elif vision_category in FOOD_CATEGORIES:
+        # The knowledge base has no entry for this food, but the vision model
+        # named its category, which is enough to pick the right scoring rules
+        # and the high-risk cap.
+        category = vision_category
+    elif category_hint in FOOD_CATEGORIES:
         category = category_hint
     else:
         category = "other"
@@ -345,12 +372,7 @@ async def analyze(
     )
     assessment = assess(metrics, category, record)
 
-    chosen_storage = storage_type if storage_type in {
-        "pantry",
-        "refrigerated",
-        "frozen",
-        "counter",
-    } else None
+    chosen_storage = storage_type if storage_type in STORAGE_TYPES else None
     typical = knowledge.get_typical_shelf_life(display_name, chosen_storage)
     window = estimate_window(assessment.score, assessment.status, typical)
 

@@ -9,6 +9,7 @@ the response -- they never fabricate a generated answer.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -54,6 +55,24 @@ class AIProvider(ABC):
         temperature: float = 0.4,
     ) -> str:
         """Return the assistant's text reply."""
+
+    async def complete_vision(
+        self,
+        system: str,
+        prompt: str,
+        image: bytes,
+        *,
+        mime_type: str = "image/jpeg",
+        max_tokens: int = 256,
+        temperature: float = 0.0,
+    ) -> str:
+        """Return the model's text reply about an image.
+
+        Not supported by default. Every caller already has a non-vision path,
+        so a provider without vision degrades to that path instead of failing
+        the request.
+        """
+        raise AIProviderError(f"{self.name} is not configured for image input")
 
     async def complete_json(
         self,
@@ -264,7 +283,48 @@ class GeminiProvider(AIProvider):
             }
             for message in messages
         ]
+        return await self._generate(system, contents, max_tokens, temperature)
 
+    async def complete_vision(
+        self,
+        system: str,
+        prompt: str,
+        image: bytes,
+        *,
+        mime_type: str = "image/jpeg",
+        max_tokens: int = 256,
+        temperature: float = 0.0,
+    ) -> str:
+        """Send one image with one question.
+
+        Gemini takes image bytes base64-encoded in an ``inline_data`` part
+        alongside the text, in the same ``contents`` array as a text turn --
+        there is no separate endpoint, so this shares the retry and error
+        handling with ``complete``.
+        """
+        contents = [
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "inline_data": {
+                            "mime_type": mime_type,
+                            "data": base64.b64encode(image).decode("ascii"),
+                        }
+                    },
+                    {"text": prompt},
+                ],
+            }
+        ]
+        return await self._generate(system, contents, max_tokens, temperature)
+
+    async def _generate(
+        self,
+        system: str,
+        contents: list[dict[str, Any]],
+        max_tokens: int,
+        temperature: float,
+    ) -> str:
         payload: dict[str, Any] = {
             "contents": contents,
             "systemInstruction": {"parts": [{"text": system}]},
