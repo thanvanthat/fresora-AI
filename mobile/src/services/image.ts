@@ -149,9 +149,22 @@ export interface PickResult {
  * the real permission check happens when the browser opens the input.
  */
 export async function captureFromCamera(): Promise<PickResult> {
-  const permission = await ImagePicker.requestCameraPermissionsAsync();
-  if (!permission.granted) {
-    return { uri: '', cancelled: true, permissionDenied: true };
+  // The permission request is skipped on web, and the order matters more than
+  // it looks. expo-image-picker opens the picker by dispatching an untrusted
+  // MouseEvent at a file input, which browsers allow only while a user
+  // activation is live. Awaiting anything first ends that activation: desktop
+  // Chrome has a few seconds of grace so it still worked there, but mobile
+  // browsers are strict and the camera simply never opened -- the only trace
+  // being "File chooser dialog can only be shown with a user activation" in
+  // the console.
+  //
+  // Nothing is lost by skipping it. There is no camera permission to grant on
+  // web; the device's own camera app asks, if anything does.
+  if (Platform.OS !== 'web') {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      return { uri: '', cancelled: true, permissionDenied: true };
+    }
   }
 
   const result = await ImagePicker.launchCameraAsync({
@@ -168,11 +181,15 @@ export async function captureFromCamera(): Promise<PickResult> {
 
 /** Opens the photo library. */
 export async function pickFromGallery(): Promise<PickResult> {
-  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!permission.granted) {
-    return { uri: '', cancelled: true, permissionDenied: true };
+  // Skipped on web for the same reason as captureFromCamera: awaiting the
+  // permission ends the user activation the file picker needs, and there is
+  // no photo-library permission on web to ask for.
+  if (Platform.OS !== 'web') {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      return { uri: '', cancelled: true, permissionDenied: true };
+    }
   }
-
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images'],
     quality: 1,
