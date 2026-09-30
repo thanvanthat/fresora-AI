@@ -212,6 +212,26 @@ class GeminiProvider(AIProvider):
         self._model = model
         self._timeout = timeout
 
+    def _describe_error(self, response: httpx.Response) -> str:
+        """A short, safe reason from an error response.
+
+        Returns the status and message Google supplies -- "API_KEY_INVALID",
+        "models/... is not found" -- with the key scrubbed in case a future
+        message quotes it back. Falls back to a truncated body when the shape
+        is unfamiliar, so an unexpected error is still visible.
+        """
+        try:
+            error = response.json().get("error") or {}
+            status = error.get("status") or ""
+            message = error.get("message") or ""
+            detail = f"{status}: {message}".strip(": ") or response.text[:200]
+        except Exception:  # pragma: no cover - non-JSON error body
+            detail = response.text[:200]
+
+        if self._api_key:
+            detail = detail.replace(self._api_key, "<redacted>")
+        return detail
+
     async def complete(
         self,
         system: str,
@@ -254,8 +274,15 @@ class GeminiProvider(AIProvider):
             raise AIProviderError(f"could not reach the AI provider: {exc}") from exc
 
         if response.status_code != 200:
-            # Never include the body: Gemini echoes request detail in errors.
-            raise AIProviderError(f"AI provider returned HTTP {response.status_code}")
+            # Gemini's 400 covers an invalid key, an unknown model and a
+            # malformed request alike, and they need different fixes. Dropping
+            # the body entirely left "HTTP 400" as the only clue, which is not
+            # enough to act on -- so the reason is surfaced with the key
+            # redacted, rather than the whole body discarded.
+            raise AIProviderError(
+                f"AI provider returned HTTP {response.status_code}: "
+                f"{self._describe_error(response)}"
+            )
 
         body = response.json()
         candidates = body.get("candidates") or []

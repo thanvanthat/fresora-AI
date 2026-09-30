@@ -156,15 +156,25 @@ class TestFailureModes:
             await provider.complete("s", [{"role": "user", "content": "q"}], max_tokens=4)
 
     @pytest.mark.asyncio
-    async def test_an_http_error_does_not_leak_the_response_body(
+    async def test_an_http_error_reports_the_reason_without_the_key(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Gemini echoes request detail in errors; it must not reach the client."""
+        """A bare "HTTP 400" is not actionable.
+
+        Gemini returns 400 for an invalid key, an unknown model and a
+        malformed request alike, and each needs a different fix -- so the
+        reason has to survive, with the key scrubbed in case it is quoted back.
+        """
 
         def handler(url: str, payload: dict, headers: dict) -> httpx.Response:
             return httpx.Response(
                 400,
-                json={"error": {"message": "API key not valid: SECRET-KEY"}},
+                json={
+                    "error": {
+                        "status": "INVALID_ARGUMENT",
+                        "message": "API key not valid: SECRET-KEY",
+                    }
+                },
                 request=httpx.Request("POST", "https://example.invalid"),
             )
 
@@ -174,8 +184,35 @@ class TestFailureModes:
         with pytest.raises(AIProviderError) as caught:
             await provider.complete("s", [{"role": "user", "content": "q"}], max_tokens=64)
 
-        assert "SECRET-KEY" not in str(caught.value)
-        assert "400" in str(caught.value)
+        message = str(caught.value)
+        assert "SECRET-KEY" not in message
+        assert "<redacted>" in message
+        assert "INVALID_ARGUMENT" in message
+        assert "400" in message
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_model_is_reported_as_such(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The other common 400, and it needs a different fix from a bad key."""
+
+        def handler(url: str, payload: dict, headers: dict) -> httpx.Response:
+            return httpx.Response(
+                404,
+                json={
+                    "error": {
+                        "status": "NOT_FOUND",
+                        "message": "models/gemini-9-turbo is not found",
+                    }
+                },
+                request=httpx.Request("POST", "https://example.invalid"),
+            )
+
+        monkeypatch.setattr(httpx, "AsyncClient", _client(handler))
+        provider = GeminiProvider("k", "gemini-9-turbo", 10.0)
+
+        with pytest.raises(AIProviderError, match="is not found"):
+            await provider.complete("s", [{"role": "user", "content": "q"}], max_tokens=64)
 
     @pytest.mark.asyncio
     async def test_json_is_parsed_out_of_a_code_fence(
