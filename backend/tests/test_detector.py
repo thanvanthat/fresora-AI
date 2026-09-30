@@ -1,9 +1,10 @@
 """Tests for multi-item food detection.
 
-The geometry is tested without the 29 MB graph, because the mistakes that
-matter here are silent ones: SSD emits (ymin, xmin, ymax, xmax) while the rest
-of the app uses (x1, y1, x2, y2), and swapping them rotates every crop without
-raising anything.
+The geometry is tested without the 20 MB graph, because the mistakes that
+matter here are silent ones. YOLOX emits grid-relative (cx, cy, w, h) that has
+to be decoded with the right stride and mapped back through the letterbox
+scale; every wrong variant still returns plausible-looking boxes in the wrong
+places rather than raising.
 """
 
 from __future__ import annotations
@@ -16,17 +17,22 @@ import pytest
 from app.vision.detector import (
     COCO_OTHER_FOOD,
     COCO_TO_FOOD,
+    INPUT_SIZE,
     MAX_IOU,
     MIN_AREA_FRACTION,
     MIN_CONFIDENCE,
+    PAD_VALUE,
+    STRIDES,
     Detection,
     FoodDetector,
     _iou,
+    decode,
     deduplicate,
+    letterbox,
 )
 
 MODEL_PRESENT = (
-    Path(__file__).resolve().parents[1] / "models" / "ssd_mobilenet_v1_coco.onnx"
+    Path(__file__).resolve().parents[1] / "models" / "yolox_tiny.onnx"
 ).exists()
 needs_model = pytest.mark.skipif(not MODEL_PRESENT, reason="detector model not present")
 
@@ -155,6 +161,78 @@ class TestClassMapping:
 
         assert known.known is True
         assert unknown.known is False
+
+
+class TestLetterbox:
+    """Preprocessing failures here are silent: the model still returns boxes,
+    they are just wrong."""
+
+    def test_output_is_the_graph_input_shape(self) -> None:
+        batch, _ = letterbox(np.zeros((480, 640, 3), np.uint8))
+        assert batch.shape == (1, 3, INPUT_SIZE, INPUT_SIZE)
+
+    def test_aspect_ratio_is_preserved(self) -> None:
+        """Stretching a wide photo square would squash every object in it."""
+        wide = np.zeros((100, 400, 3), np.uint8)
+        _, ratio = letterbox(wide)
+        # The long edge governs: 416/400, not 416/100.
+        assert ratio == pytest.approx(INPUT_SIZE / 400)
+
+    def test_padding_uses_the_trained_fill_value(self) -> None:
+        # Bottom-right stays padding for a wide image.
+        batch, _ = letterbox(np.zeros((100, 400, 3), np.uint8))
+        assert batch[0, 0, INPUT_SIZE - 1, INPUT_SIZE - 1] == pytest.approx(PAD_VALUE)
+
+    def test_pixels_are_not_normalised(self) -> None:
+        """YOLOX takes raw 0-255. ImageNet normalisation would not error --
+        it would just make every prediction wrong."""
+        batch, _ = letterbox(np.full((416, 416, 3), 200, np.uint8))
+        assert batch.max() > 1.5  # still in 0-255 space, not scaled to 0-1
+
+    def test_square_input_is_not_scaled(self) -> None:
+        _, ratio = letterbox(np.zeros((INPUT_SIZE, INPUT_SIZE, 3), np.uint8))
+        assert ratio == pytest.approx(1.0)
+
+
+class TestDecode:
+    """YOLOX predicts an offset within a grid cell, not an absolute position.
+
+    Skipping the grid/stride step clusters every box in the top-left corner,
+    which reads as a broken model rather than a missing step.
+    """
+
+    def _anchors(self) -> int:
+        return sum((INPUT_SIZE // s) ** 2 for s in STRIDES)
+
+    def test_anchor_count_matches_the_graph_output(self) -> None:
+        # 52^2 + 26^2 + 13^2 = 3549, the middle axis of the model's output.
+        assert self._anchors() == 3549
+
+    def test_the_first_cell_maps_to_the_origin(self) -> None:
+        raw = np.zeros((self._anchors(), 85), dtype=np.float32)
+        decoded = decode(raw)
+        # Cell (0,0) at stride 8 with zero offset: centre stays at 0.
+        assert decoded[0, 0] == pytest.approx(0.0)
+        assert decoded[0, 1] == pytest.approx(0.0)
+
+    def test_offsets_are_scaled_by_stride(self) -> None:
+        raw = np.zeros((self._anchors(), 85), dtype=np.float32)
+        raw[1, 0] = 0.5  # half a cell right, in the second stride-8 cell
+        decoded = decode(raw)
+        # Cell index 1 is x=1, so (0.5 + 1) * 8 = 12.
+        assert decoded[1, 0] == pytest.approx(12.0)
+
+    def test_width_and_height_are_exponentiated(self) -> None:
+        raw = np.zeros((self._anchors(), 85), dtype=np.float32)
+        decoded = decode(raw)
+        # exp(0) * 8 = 8 for the first stride.
+        assert decoded[0, 2] == pytest.approx(8.0)
+
+    def test_later_strides_use_larger_cells(self) -> None:
+        raw = np.zeros((self._anchors(), 85), dtype=np.float32)
+        decoded = decode(raw)
+        first_of_stride_32 = (INPUT_SIZE // 8) ** 2 + (INPUT_SIZE // 16) ** 2
+        assert decoded[first_of_stride_32, 2] == pytest.approx(32.0)
 
 
 class TestThresholds:

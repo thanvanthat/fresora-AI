@@ -250,7 +250,7 @@ def test_detection_rescues_a_single_food_the_classifier_missed(
     assert body["food_name"] == "Banana"
     assert body["score"] > 0  # actually scored, not just named
     # The response must say the answer came from a different model.
-    assert "ssd-mobilenet" in body["model_version"]
+    assert "yolox-tiny" in body["model_version"]
 
 
 def test_several_detected_foods_become_a_shortlist_not_a_guess(

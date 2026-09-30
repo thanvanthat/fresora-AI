@@ -8,7 +8,7 @@ what keeps the whole backend inside the 250 MB limit for a serverless function.
 |---|---|---|---|
 | `mobilenetv2-12.onnx` | Image classification | 14.0 MB | Every `/analyze` and `/food/identify` |
 | `imagenet_class_index.json` | Class id → label table | 35 KB | With the above |
-| `ssd_mobilenet_v1_coco.onnx` | Object detection + location | 29.3 MB | `/detect`, and `/analyze` when classification fails |
+| `yolox_tiny.onnx` | Object detection + location | 20.2 MB | `/detect`, and `/analyze` when classification fails |
 | `protein_hint.npz` + `protein_hint_labels.txt` | Custom binary classifier | 7.9 KB | `/analyze` when nothing is identified |
 | `head.npz` + `labels.txt` | Custom multi-class head | — | Only if you train one (not committed) |
 
@@ -89,57 +89,72 @@ the head to recognise your worktop.
 
 ---
 
-## 3. SSD + MobileNetV2 — object detection
+## 3. YOLOX-Tiny — object detection
 
 **What it does.** Finds *where* each food is, so a fridge shelf becomes
 several items rather than one averaged score. Each box is cropped and put
 through the same measurement and scoring path as a single scan.
 
-**Source.** ONNX Model Zoo, `ssd_mobilenet_v1_10`, COCO-trained.
+**Source.** [YOLOX](https://github.com/Megvii-BaseDetection/YOLOX) release
+`0.1.1rc0`, `yolox_tiny.onnx`, COCO-trained. Apache-2.0.
 
 **Detects** banana, apple, orange, broccoli and carrot (mapped to reference
 data), plus sandwich, pizza, hot dog, donut and cake (detected, not scored).
 Everything else COCO knows — people, cutlery, furniture — is ignored, because
 a box around a fork is noise on a food scan.
 
-**Measured.** 7 items found and individually scored on a fruit photo;
-110–157 ms warm, ~6 s on a cold start while the graph loads.
+**Measured** on the same fruit photo, against the SSD MobileNet v1 it replaced:
 
-Boxes are deduplicated across classes at IoU 0.55. SSD applies its own NMS per
-class, which does not merge the same orange returned as both "orange" and
-"apple" — that would double-count in the inventory.
+| | SSD MobileNet v1 | YOLOX-Tiny |
+|---|---|---|
+| Model size | 29.3 MB | **20.2 MB** |
+| Distinct items found | 7 | **12** |
+| Top confidence | 0.86 | **0.88** |
+| Warm latency | 40–60 ms | 220–260 ms |
+
+YOLOX is slower because decoding and NMS run in NumPy rather than inside the
+graph, which is the trade for finding nearly twice as many items correctly.
+Still well inside a scan's budget.
+
+### Post-processing, and why it is not optional
+
+Unlike SSD, YOLOX emits **no NMS and no absolute coordinates**. Three steps
+happen in `detector.py`, and each fails silently rather than loudly:
+
+1. **Letterbox** onto a 416×416 canvas padded with 114, preserving aspect
+   ratio. Stretching to a square instead would squash every object. Pixels
+   stay raw BGR 0–255 — applying the ImageNet mean/std the classifier needs
+   would not error, it would just make every prediction wrong.
+2. **Decode** grid-relative offsets: `(offset + cell) × stride` for centres,
+   `exp(raw) × stride` for sizes, across strides 8/16/32 (3549 anchors).
+   Skipping this clusters every box in the top-left corner.
+3. **NMS**, via `deduplicate` at IoU 0.55. A six-fruit photo produces 110 raw
+   boxes; without this the user would see dozens of duplicates of one apple.
 
 **Cannot detect** tomato, potato, onion or raw meat: COCO has no class for
 them, the same wall the classifier hits.
 
 ---
 
-## 4. YOLO — considered, not included
+## 4. Why YOLOX rather than YOLOv8n
 
-YOLO is an object detector, which is the job SSD MobileNet already does here.
-Adding it would give the project no capability it lacks, so it is a deliberate
-omission rather than an oversight.
+YOLOv8n was the original choice and was rejected for two concrete reasons.
 
-Three specific reasons:
+**No public ONNX build exists.** Every Hugging Face repo hosting YOLOv8n ships
+PyTorch `.pt` only. Producing an ONNX needs `ultralytics` plus `torch`, about
+2.5 GB installed, purely as a build-time step for a 12 MB artefact.
 
-**It duplicates an existing capability.** Two detectors would run the same
-pipeline over the same classes. Only one can be wired to `/detect`; the other
-would be dead weight in the bundle.
+**Licensing.** Ultralytics YOLOv5/v8 weights are AGPL-3.0. On a public
+repository that carries obligations the Apache-2.0 weights here do not.
 
-**Licensing.** YOLOv5/v8 weights from Ultralytics are AGPL-3.0. Shipping them
-in a public repository carries obligations that the Apache-2.0 ONNX Model Zoo
-weights used here do not.
+YOLOX is the same family of single-stage detector, is **Apache-2.0**, and
+publishes ONNX directly — no conversion step and no 2.5 GB dependency. Tiny
+(20 MB) is used; Nano (3.7 MB) is available from the same release if cold-start
+time ever matters more than accuracy.
 
-**Size budget.** The backend already carries OpenCV, ONNX Runtime and 43 MB of
-models inside a 250 MB serverless limit. Adding a second detector spends that
-headroom on a duplicate.
-
-**If you do want YOLO**, the sensible move is to *replace* SSD rather than add
-to it. YOLOv8n is around 12 MB — smaller than SSD's 29 MB — and more accurate
-on COCO. The work is a new `detect()` in `app/vision/detector.py`: YOLO emits
-raw boxes with no built-in NMS, so post-processing has to be written, and its
-output is `(cx, cy, w, h)` rather than SSD's `(ymin, xmin, ymax, xmax)`.
-`Detection` and everything downstream would not change.
+SSD MobileNet v1, which YOLOX replaced, was Apache-2.0 and worked. It was
+swapped out because YOLOX is 9 MB smaller and found 12 items where SSD found
+7 on the same photo.
 
 ---
 
@@ -148,7 +163,7 @@ output is `(cx, cy, w, h)` rather than SSD's `(ymin, xmin, ymax, xmax)`.
 | Artefact | Origin | Licence |
 |---|---|---|
 | `mobilenetv2-12.onnx` | ONNX Model Zoo | Apache-2.0 |
-| `ssd_mobilenet_v1_coco.onnx` | ONNX Model Zoo | Apache-2.0 |
+| `yolox_tiny.onnx` | Megvii YOLOX release 0.1.1rc0 | Apache-2.0 |
 | `imagenet_class_index.json` | TensorFlow/Keras | Apache-2.0 |
 | `protein_hint.npz` | Trained here | See below |
 

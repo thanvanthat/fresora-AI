@@ -48,7 +48,7 @@ export default function AboutScreen() {
                   : 'Disabled — name the food yourself'
               }
             />
-            <Row label="Multi-item scan" value="SSD + MobileNetV2 object detection" />
+            <Row label="Multi-item scan" value="YOLOX-Tiny object detection" />
             <Row label="Surface measurement" value="OpenCV (colour, defects, texture)" />
             <Row label="Freshness score" value="Documented deterministic formula" />
             <Row
@@ -91,7 +91,7 @@ export default function AboutScreen() {
             <Row label="API" value="FastAPI · Uvicorn · Pydantic v2" />
             <Row label="Computer vision" value="OpenCV (headless) · NumPy" />
             <Row label="Image classifier" value="MobileNetV2 via onnxruntime" />
-            <Row label="Object detection" value="SSD + MobileNetV2 (COCO)" />
+            <Row label="Object detection" value="YOLOX-Tiny (COCO)" />
             <Row label="Custom classifier" value="Linear head over MobileNetV2 features" />
             <Row label="Inference runtime" value="ONNX Runtime (CPU)" />
             <Row label="Image pipeline" value="expo-image-manipulator · Pillow" />

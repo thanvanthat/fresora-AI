@@ -238,7 +238,7 @@ async def analyze(
                 identified = True
                 detected_name = unique_foods[0]
                 confidence = 0.0  # from detection, not the classifier
-                model_version = f"{model_version}+ssd-mobilenet"
+                model_version = f"{model_version}+yolox-tiny"
                 note = (
                     "Identified by locating the food in the frame rather than "
                     "from the photo as a whole."
@@ -535,7 +535,7 @@ async def detect_foods(image: UploadFile = File(...)) -> DetectResponse:
         count=len(items),
         items=items,
         processing_ms=int((time.perf_counter() - started) * 1000),
-        model_version="ssd-mobilenet-v1-coco",
+        model_version="yolox-tiny-coco",
         note=note,
         safety_notice=SAFETY_NOTICE,
     )

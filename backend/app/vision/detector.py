@@ -10,7 +10,7 @@ average into one number.
 
 WHAT IT DETECTS
 ---------------
-SSD MobileNet v1 trained on COCO. Of COCO's 80 classes, five are foods Fresora
+YOLOX-Tiny trained on COCO. Of COCO's 80 classes, five are foods Fresora
 already holds reference data for: banana, apple, orange, broccoli and carrot.
 Four more are foods it does not (sandwich, pizza, hot dog, donut, cake), and
 those are reported as detected-but-unknown rather than dropped, so the user can
@@ -35,26 +35,41 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
-DETECTOR_FILE = "ssd_mobilenet_v1_coco.onnx"
+DETECTOR_FILE = "yolox_tiny.onnx"
 
-#: COCO class id -> the Fresora food it corresponds to.
-#: Only unambiguous mappings, matching the classifier's own policy.
+#: Square side the network takes. Images are letterboxed to it.
+INPUT_SIZE = 416
+
+#: Feature-map strides YOLOX predicts at. 416/8, /16 and /32 give
+#: 52*52 + 26*26 + 13*13 = 3549 anchors, matching the output's middle axis.
+STRIDES = (8, 16, 32)
+
+#: Letterbox fill. YOLOX trains with this value, so padding with black instead
+#: shifts the statistics the network sees at the edges.
+PAD_VALUE = 114
+
+#: COCO class index -> the Fresora food it corresponds to.
+#:
+#: These are 0-based indices into COCO's 80 classes, which is what YOLOX emits.
+#: SSD used the 90-class map where banana is 52; here it is 46. Carrying the
+#: old numbers over would silently relabel everything -- apples as oranges and
+#: so on -- rather than failing, so they are worth stating plainly.
 COCO_TO_FOOD: dict[int, str] = {
-    52: "Banana",
-    53: "Apple",
-    55: "Orange",
-    56: "Broccoli",
-    57: "Carrot",
+    46: "Banana",
+    47: "Apple",
+    49: "Orange",
+    50: "Broccoli",
+    51: "Carrot",
 }
 
 #: COCO foods with no Fresora reference data. Reported so the user can name
 #: them; never silently dropped, because "we found nothing" would be wrong.
 COCO_OTHER_FOOD: dict[int, str] = {
-    54: "sandwich",
-    58: "hot dog",
-    59: "pizza",
-    60: "donut",
-    61: "cake",
+    48: "sandwich",
+    52: "hot dog",
+    53: "pizza",
+    54: "donut",
+    55: "cake",
 }
 
 #: Below this the model mostly proposes duplicates of what it already found.
@@ -62,10 +77,13 @@ COCO_OTHER_FOOD: dict[int, str] = {
 #: 0.40 kept every item a person would point at.
 MIN_CONFIDENCE = 0.40
 
-#: Two boxes overlapping more than this are treated as the same item. SSD
-#: already applies its own NMS per class, but the same fruit often comes back
-#: under two classes (an orange as both "orange" and "apple"), which its NMS
-#: does not merge and which would double-count on the inventory screen.
+#: Two boxes overlapping more than this are treated as the same item.
+#:
+#: YOLOX emits one prediction per anchor with no NMS of its own, so a single
+#: apple arrives as dozens of near-identical boxes -- 110 raw hits on a
+#: six-fruit photo. `deduplicate` is therefore doing real NMS here, not the
+#: cross-class tidy-up it was for SSD, and it also still merges the same fruit
+#: returned under two classes.
 MAX_IOU = 0.55
 
 #: A box smaller than this fraction of the frame is too small to measure
@@ -142,12 +160,65 @@ def deduplicate(detections: list[Detection]) -> list[Detection]:
     return kept
 
 
+def letterbox(image_bgr: np.ndarray) -> tuple[np.ndarray, float]:
+    """Scales the image into a square canvas without distorting it.
+
+    Returns the NCHW batch and the scale factor, which is needed to map boxes
+    back to the original image. Stretching to a square instead would squash a
+    banana into something the network has not seen.
+
+    YOLOX takes raw BGR in 0-255: no channel swap and no mean/std
+    normalisation. Applying ImageNet normalisation here -- as the classifier
+    needs -- would not error, it would just make every prediction wrong.
+    """
+    import cv2  # noqa: PLC0415
+
+    canvas = np.full((INPUT_SIZE, INPUT_SIZE, 3), PAD_VALUE, dtype=np.uint8)
+    ratio = min(INPUT_SIZE / image_bgr.shape[0], INPUT_SIZE / image_bgr.shape[1])
+
+    height = int(image_bgr.shape[0] * ratio)
+    width = int(image_bgr.shape[1] * ratio)
+    canvas[:height, :width] = cv2.resize(
+        image_bgr, (width, height), interpolation=cv2.INTER_LINEAR
+    )
+
+    batch = np.ascontiguousarray(canvas.transpose(2, 0, 1)[np.newaxis], dtype=np.float32)
+    return batch, ratio
+
+
+def decode(raw: np.ndarray) -> np.ndarray:
+    """Turns grid-relative predictions into pixel boxes.
+
+    YOLOX predicts an offset within each grid cell rather than an absolute
+    position, so every box needs its cell origin added and its stride applied.
+    Skipping this yields boxes clustered in the top-left corner, which looks
+    like a broken model rather than a missing step.
+
+    In: (anchors, 85). Out: the same array with columns 0-3 as
+    (cx, cy, w, h) in letterboxed pixels.
+    """
+    grids = []
+    strides = []
+    for stride in STRIDES:
+        size = INPUT_SIZE // stride
+        xs, ys = np.meshgrid(np.arange(size), np.arange(size))
+        grids.append(np.stack((xs, ys), axis=2).reshape(-1, 2))
+        strides.append(np.full((size * size, 1), stride))
+
+    grid = np.concatenate(grids, axis=0)
+    stride_per_anchor = np.concatenate(strides, axis=0)
+
+    raw[:, :2] = (raw[:, :2] + grid) * stride_per_anchor
+    raw[:, 2:4] = np.exp(raw[:, 2:4]) * stride_per_anchor
+    return raw
+
+
 class DetectorUnavailable(RuntimeError):
     """The detector model or runtime is not usable."""
 
 
 class FoodDetector:
-    """Lazy-loading SSD MobileNet detector."""
+    """Lazy-loading YOLOX-Tiny detector."""
 
     def __init__(self, models_dir: Path = MODELS_DIR) -> None:
         self._models_dir = models_dir
@@ -186,35 +257,36 @@ class FoodDetector:
         if self._session is None:
             raise DetectorUnavailable("detector not loaded")
 
-        import cv2  # noqa: PLC0415
-
-        # The graph takes uint8 NHWC in RGB at whatever size it is given; it
-        # resizes internally, so no normalisation happens here.
-        rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)[np.newaxis, ...]
-        boxes, classes, scores, count = self._session.run(
-            None, {self._input_name: rgb}
+        height, width = image_bgr.shape[:2]
+        batch, ratio = letterbox(image_bgr)
+        predictions = decode(
+            np.asarray(self._session.run(None, {self._input_name: batch})[0])[0].copy()
         )
 
-        found: list[Detection] = []
-        for index in range(int(count[0])):
-            confidence = float(scores[0][index])
-            if confidence < MIN_CONFIDENCE:
-                continue
+        # Column 4 is objectness, 5 onwards are per-class scores. The product
+        # is the usual YOLO confidence: a box can be confidently "an apple"
+        # while the model is not confident anything is there at all.
+        class_scores = predictions[:, 4:5] * predictions[:, 5:]
+        class_ids = class_scores.argmax(axis=1)
+        confidences = class_scores.max(axis=1)
 
-            class_id = int(classes[0][index])
+        found: list[Detection] = []
+        for index in np.flatnonzero(confidences >= MIN_CONFIDENCE):
+            class_id = int(class_ids[index])
             food_name = COCO_TO_FOOD.get(class_id)
             raw_label = food_name or COCO_OTHER_FOOD.get(class_id)
             if raw_label is None:
                 continue  # not a food; a box round a fork helps nobody
 
-            # SSD emits (ymin, xmin, ymax, xmax); the rest of the app uses
-            # (x1, y1, x2, y2), and mixing the two silently rotates every crop.
-            ymin, xmin, ymax, xmax = (float(v) for v in boxes[0][index])
+            # (cx, cy, w, h) in letterboxed pixels -> corners in the original
+            # image -> normalised. Dividing by `ratio` undoes the letterbox
+            # scale; the padding sits bottom-right so no offset is needed.
+            cx, cy, box_w, box_h = (float(v) / ratio for v in predictions[index, :4])
             box = (
-                max(0.0, xmin),
-                max(0.0, ymin),
-                min(1.0, xmax),
-                min(1.0, ymax),
+                max(0.0, (cx - box_w / 2) / width),
+                max(0.0, (cy - box_h / 2) / height),
+                min(1.0, (cx + box_w / 2) / width),
+                min(1.0, (cy + box_h / 2) / height),
             )
 
             if (box[2] - box[0]) * (box[3] - box[1]) < MIN_AREA_FRACTION:
@@ -224,11 +296,13 @@ class FoodDetector:
                 Detection(
                     food_name=food_name,
                     raw_label=raw_label.lower(),
-                    confidence=round(confidence, 4),
+                    confidence=round(float(confidences[index]), 4),
                     box=box,
                 )
             )
 
+        # Sorting first is what makes deduplicate an NMS: the most confident
+        # box of each cluster is kept and the rest are suppressed against it.
         found.sort(key=lambda d: d.confidence, reverse=True)
         return deduplicate(found)[:max_items]
 

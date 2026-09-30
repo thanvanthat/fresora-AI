@@ -149,7 +149,7 @@ through the API would add a hop and a second place to enforce ownership.
 | Backend | FastAPI, Uvicorn, Pydantic v2 |
 | Vision | OpenCV (headless), NumPy |
 | Classifier | MobileNetV2 via onnxruntime (bundled, 14 MB) |
-| Object detection | SSD + MobileNetV2, COCO (bundled, 29 MB) |
+| Object detection | YOLOX-Tiny, COCO (bundled, 20 MB) |
 | Custom classifier | Linear head over frozen MobileNetV2 features |
 | Database | Supabase Postgres + RLS — **optional**, see below |
 | AI assistant | Provider abstraction (Anthropic / OpenAI) — **optional** |
@@ -264,8 +264,8 @@ Full detail, including measured accuracy and licensing, in
 |---|---|---|
 | **MobileNetV2** | Classifies an image | Names the food on every scan |
 | **MobileNetV2 + custom classifier** | Classifies your own categories | Raw-protein hint; `scripts/train_food_head.py` trains more |
-| **SSD + MobileNetV2** | Detects objects and their locations | Multi-item scan, and rescues a scan the classifier missed |
-| **YOLO** | Object detection | Not used — SSD covers this. [Why, and how to swap](backend/models/README.md#4-yolo--considered-not-included) |
+| **YOLO** | Object detection | **YOLOX-Tiny** — multi-item scan, and rescues a scan the classifier missed |
+| **SSD + MobileNetV2** | Detects objects and their locations | Replaced by YOLOX-Tiny: smaller, more accurate, same Apache-2.0 terms |
 | **CNN / MobileNetV2** | Image/feature classification | The same backbone; the custom heads run on its features |
 
 All inference is ONNX Runtime on CPU. No TensorFlow or PyTorch at runtime,
