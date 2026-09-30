@@ -246,6 +246,39 @@ class TestFailureModes:
         assert calls["n"] == 3  # the first attempt plus two retries
 
     @pytest.mark.asyncio
+    async def test_a_quota_error_is_not_retried(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """429 means the quota is spent, not that the service hiccupped.
+
+        Gemini's free tier allows 20 requests and its 429 asks for a retry in
+        8-45 seconds. Retrying immediately spends three times the quota to fail
+        three times as expensively.
+        """
+        calls = {"n": 0}
+
+        def handler(url: str, payload: dict, headers: dict) -> httpx.Response:
+            calls["n"] += 1
+            return httpx.Response(
+                429,
+                json={
+                    "error": {
+                        "status": "RESOURCE_EXHAUSTED",
+                        "message": "You exceeded your current quota",
+                    }
+                },
+                request=httpx.Request("POST", "https://example.invalid"),
+            )
+
+        monkeypatch.setattr(httpx, "AsyncClient", _client(handler))
+        provider = GeminiProvider("k", "m", 10.0)
+
+        with pytest.raises(AIProviderError, match="RESOURCE_EXHAUSTED"):
+            await provider.complete("s", [{"role": "user", "content": "q"}], max_tokens=64)
+
+        assert calls["n"] == 1
+
+    @pytest.mark.asyncio
     async def test_a_bad_key_is_not_retried(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

@@ -20,9 +20,15 @@ from ..config import Settings
 
 logger = logging.getLogger(__name__)
 
-#: Statuses worth another attempt: the request was fine, the service was not.
-#: 429 is rate limiting, the 5xx are transient capacity problems.
-RETRYABLE_STATUSES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+#: Statuses worth another attempt: the request was fine, the service was
+#: briefly not. These clear in seconds.
+#:
+#: 429 is deliberately absent. Gemini's free tier allows 20 requests, and its
+#: 429 asks for a retry in 8-45 seconds -- far longer than anyone waiting on a
+#: recipe will sit through. Retrying it would spend three times the quota to
+#: fail three times as expensively, which is exactly what happened when this
+#: set first included it.
+RETRYABLE_STATUSES: frozenset[int] = frozenset({500, 502, 503, 504})
 
 #: Seconds to wait before each retry. Two attempts after the first, because a
 #: third rarely helps within a request a user is waiting on.
