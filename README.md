@@ -373,12 +373,19 @@ requests still go to Anthropic:
 
 ```
 GEMINI_API_KEY=AIza...
-GEMINI_MODEL=gemini-2.0-flash
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
-Get a key from <https://aistudio.google.com/apikey>. **It starts with `AIza`.**
-A value starting with `AQ.` or `ya29.` is an OAuth access token, not an API
-key: it expires within the hour and the API rejects it with a 401.
+Get a key from <https://aistudio.google.com/apikey>. Google issues more than
+one key format — both `AIza…` and `AQ.…` are valid API keys — so do not judge a
+key by its prefix. Check it instead:
+
+```bash
+curl -s "https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY" | head -c 200
+```
+
+A list of models means the key works. `API_KEY_INVALID` means it does not, and
+no amount of redeploying will change that.
 
 **In production this belongs in your host's encrypted environment variables,
 never in a file.** On Vercel: project → Settings → Environment Variables, type
@@ -408,7 +415,7 @@ in favour of the rules path.
 | `backend/.env` | `LLM_PROVIDER` | `anthropic`, `openai` or `gemini`. |
 | | `LLM_API_KEY` | Optional. Server-side only. |
 | | `GEMINI_API_KEY` | Optional. Selects Gemini on its own. |
-| | `GEMINI_MODEL` | Optional, default `gemini-2.0-flash`. |
+| | `GEMINI_MODEL` | Optional, default `gemini-2.5-flash`. |
 | | `MODEL_PATH` | Optional. Fine-tuned model. |
 | | `MAX_IMAGE_EDGE` | Resize cap, default 1024. |
 | | `MAX_UPLOAD_BYTES` | Default 12 MB. |
