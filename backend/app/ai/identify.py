@@ -97,7 +97,7 @@ class VisionIdentification:
 async def identify_food(image: bytes, *, mime_type: str = "image/jpeg"):
     """Name the food in ``image``, or None when that cannot be done honestly."""
     settings = get_settings()
-    provider = get_provider(settings)
+    provider = get_provider(settings, model=settings.llm_vision_model)
     if provider is None:
         return None
 

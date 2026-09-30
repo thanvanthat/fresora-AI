@@ -412,8 +412,13 @@ _PROVIDERS: dict[str, type[AIProvider]] = {
 }
 
 
-def get_provider(settings: Settings) -> AIProvider | None:
-    """Build the configured provider, or None when no key is set."""
+def get_provider(settings: Settings, *, model: str | None = None) -> AIProvider | None:
+    """Build the configured provider, or None when no key is set.
+
+    ``model`` overrides the configured chat model. Used by image
+    identification, which runs on its own model so that it does not share a
+    per-model request quota with the assistant.
+    """
     if not settings.llm_configured:
         return None
 
@@ -428,6 +433,6 @@ def get_provider(settings: Settings) -> AIProvider | None:
 
     return provider_class(  # type: ignore[call-arg]
         api_key=settings.llm_api_key,
-        model=settings.llm_model,
+        model=model or settings.llm_model,
         timeout=settings.llm_timeout_seconds,
     )

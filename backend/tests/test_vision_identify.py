@@ -33,7 +33,7 @@ class _Vision:
 def provider(monkeypatch):
     def _install(reply):
         fake = _Vision(reply)
-        monkeypatch.setattr(identify, "get_provider", lambda _settings: fake)
+        monkeypatch.setattr(identify, "get_provider", lambda _settings, **_kw: fake)
         return fake
 
     return _install
@@ -116,7 +116,7 @@ async def test_provider_failure_never_raises(provider):
 
 @pytest.mark.asyncio
 async def test_no_provider_configured(monkeypatch):
-    monkeypatch.setattr(identify, "get_provider", lambda _settings: None)
+    monkeypatch.setattr(identify, "get_provider", lambda _settings, **_kw: None)
     assert await identify.identify_food(b"x") is None
 
 

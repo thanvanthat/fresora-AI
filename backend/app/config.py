@@ -44,6 +44,25 @@ def _resolve_provider() -> str:
     return "anthropic"
 
 
+#: Model used to name food in a photograph, when it differs from the chat
+#: model. Gemini's free-tier request quota is counted PER MODEL, so pointing
+#: scans at their own model stops a busy assistant from using up the budget a
+#: scan needs -- and naming a food is a small job that the lite model does
+#: quickly, which matters when someone is waiting on a scan.
+_DEFAULT_VISION_MODELS: dict[str, str] = {
+    "gemini": "gemini-flash-lite-latest",
+}
+
+
+def _resolve_vision_model() -> str:
+    """LLM_VISION_MODEL, then the provider's vision default, then its chat model."""
+    explicit = os.getenv("LLM_VISION_MODEL", "").strip()
+    if explicit:
+        return explicit
+    provider = _resolve_provider()
+    return _DEFAULT_VISION_MODELS.get(provider) or _resolve_model()
+
+
 def _resolve_model() -> str:
     """LLM_MODEL, then GEMINI_MODEL, then the provider's default.
 
@@ -105,6 +124,7 @@ class Settings:
         )
     )
     llm_model: str = field(default_factory=lambda: _resolve_model())
+    llm_vision_model: str = field(default_factory=lambda: _resolve_vision_model())
     llm_timeout_seconds: float = field(
         default_factory=lambda: float(os.getenv("LLM_TIMEOUT_SECONDS", "45"))
     )
