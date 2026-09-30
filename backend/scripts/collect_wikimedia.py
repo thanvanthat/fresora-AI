@@ -66,6 +66,13 @@ QUERIES: dict[str, list[str]] = {
     # "other" is what lets the head defer to ImageNet instead of forcing every
     # photo into a meat class. Without it a banana becomes whichever meat it
     # resembles most, confidently.
+    #
+    # The cooked and spoiled terms are here because of a real failure: with
+    # only sound produce in this class, a photo of mouldy bread came back as
+    # "raw meat" at p=1.0. ImageNet reads mould-on-bread as rotisserie and
+    # meat_loaf, and a linear head over those features has no way to disagree
+    # unless it has seen such images labelled otherwise. A two-class model
+    # always answers; the only control over what it answers is what it saw.
     "other": [
         "fresh vegetables",
         "fruit basket",
@@ -77,6 +84,20 @@ QUERIES: dict[str, list[str]] = {
         "kitchen counter",
         "empty plate",
         "cheese",
+        # Cooked food: reads as meat to the backbone but is not raw protein.
+        "roast chicken cooked",
+        "cooked meal plate",
+        "meatloaf cooked",
+        "barbecue cooked food",
+        "sandwich food",
+        "pizza food",
+        # Spoiled food: the case that exposed this.
+        "mouldy bread",
+        "moldy food",
+        "rotten fruit",
+        "rotten vegetables",
+        "food waste compost",
+        "spoiled food",
     ],
 }
 

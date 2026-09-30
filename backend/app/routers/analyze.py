@@ -36,18 +36,6 @@ from ..vision.metrics import ImageDecodeError, decode_image, measure_surface
 
 logger = logging.getLogger(__name__)
 
-#: Offered when the raw-protein hint fires on an item ImageNet cannot name.
-#:
-#: Derived from the knowledge base rather than hardcoded names, so a food added
-#: to a high-risk category appears here without anyone remembering to update a
-#: list. Dairy is excluded: it is high-risk too, but it does not look like raw
-#: meat and the hint was never trained to find it.
-PROTEIN_SHORTLIST: list[str] = sorted(
-    name
-    for name in knowledge.known_names()
-    if (record := knowledge.resolve(name)) is not None
-    and record.category in {"meat", "poultry", "seafood"}
-)
 router = APIRouter(tags=["analysis"])
 
 
@@ -267,31 +255,19 @@ async def analyze(
                     "one below to score the whole photo as that food."
                 )
 
-            # ImageNet has no class for raw meat, poultry or fish, which is
-            # exactly the case that lands here most often. A small trained head
-            # can still tell raw protein from everything else, so offer that as
-            # a shortlist rather than leaving the user to scroll every food.
-            # It is a hint, not an identification: the same data separates
-            # protein from produce well and one species from another badly, so
-            # the user still chooses, and the score still comes from that
-            # choice and its high-risk cap.
-            # Only when the detector found nothing. It names actual foods,
-            # which is strictly better than "this looks like raw protein", and
-            # running this unconditionally overwrote that shortlist with the
-            # vaguer one.
-            hint_confidence = (
-                None if detected_foods else classifier.protein_hint(frame)
-            )
-            if hint_confidence is not None:
-                alternatives = [
-                    AlternativeMatch(food_name=name, confidence=round(hint_confidence, 4))
-                    for name in PROTEIN_SHORTLIST
-                ]
-                note = (
-                    "This looks like raw meat, poultry or seafood. Pick which one "
-                    "and Fresora will assess it — the score is capped for these "
-                    "foods because a photograph cannot establish their safety."
-                )
+            # There was a raw-protein hint here, offering Beef/Chicken/Fish
+            # when nothing was identified. It is gone: on a photograph of
+            # mouldy bread and a mouldy pepper it answered "raw meat" at
+            # p=1.000. ImageNet reads mould-on-bread as rotisserie and
+            # meat_loaf, and a linear head over those same features has no way
+            # to disagree. Retraining with cooked and spoiled food in the
+            # negative class moved that probability not at all.
+            #
+            # A two-class model always answers. Held-out precision of 96% was
+            # measured on photos drawn from the same source as its training
+            # set, and said nothing about a real kitchen. Being confidently
+            # wrong about meat is worse for this app than saying nothing, so
+            # an unidentified item now simply asks to be named.
             return AnalysisResponse(
                 food_name="Unidentified item",
                 category="other",
