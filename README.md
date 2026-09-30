@@ -149,6 +149,8 @@ through the API would add a hop and a second place to enforce ownership.
 | Backend | FastAPI, Uvicorn, Pydantic v2 |
 | Vision | OpenCV (headless), NumPy |
 | Classifier | MobileNetV2 via onnxruntime (bundled, 14 MB) |
+| Object detection | SSD + MobileNetV2, COCO (bundled, 29 MB) |
+| Custom classifier | Linear head over frozen MobileNetV2 features |
 | Database | Supabase Postgres + RLS — **optional**, see below |
 | AI assistant | Provider abstraction (Anthropic / OpenAI) — **optional** |
 | i18n | Hand-rolled, ~100 lines over typed dictionaries |
@@ -252,6 +254,22 @@ returns `null` and the other four signals carry the assessment.
 
 Fresora is designed to run with **zero credentials** and degrade honestly.
 `GET /api/v1/health` reports exactly what is live, and the You tab shows it.
+
+### The models, at a glance
+
+Full detail, including measured accuracy and licensing, in
+[`backend/models/README.md`](backend/models/README.md).
+
+| Model | Purpose | In Fresora |
+|---|---|---|
+| **MobileNetV2** | Classifies an image | Names the food on every scan |
+| **MobileNetV2 + custom classifier** | Classifies your own categories | Raw-protein hint; `scripts/train_food_head.py` trains more |
+| **SSD + MobileNetV2** | Detects objects and their locations | Multi-item scan, and rescues a scan the classifier missed |
+| **YOLO** | Object detection | Not used — SSD covers this. [Why, and how to swap](backend/models/README.md#4-yolo--considered-not-included) |
+| **CNN / MobileNetV2** | Image/feature classification | The same backbone; the custom heads run on its features |
+
+All inference is ONNX Runtime on CPU. No TensorFlow or PyTorch at runtime,
+which is what keeps the backend inside the 250 MB serverless limit.
 
 ### Food identification (ONNX)
 
