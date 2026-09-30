@@ -79,7 +79,11 @@ export function FoodImage({
       source={{ uri: resolvedUri }}
       style={[{ width: size, height: size, borderRadius: rounded }, style]}
       contentFit="cover"
-      transition={180}
+      // No fade for a photo resolved out of IndexedDB. A blob: URL is already
+      // in memory and decodes before the fade-in can attach its load handler,
+      // which leaves the image stuck at opacity 0 -- loaded, positioned, and
+      // invisible. Nothing is lost: there is no latency here to cover up.
+      transition={isStoredImage(uri) ? 0 : 180}
       cachePolicy="disk"
       accessibilityIgnoresInvertColors
     />

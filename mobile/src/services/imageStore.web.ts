@@ -129,22 +129,37 @@ export async function storeImage(uri: string, id: string): Promise<string | null
 //: only when the underlying image is deleted.
 const resolved = new Map<string, string>();
 
+//: Lookups still running, keyed by id.
+//:
+//: A multi-item scan writes one photo shared by every item it saved, so the
+//: list mounts a dozen rows asking for the same id in the same tick. Caching
+//: only the result lets all of them miss, each creating its own object URL;
+//: eleven then leak, because only the last is in the map to revoke. Caching
+//: the promise collapses them into one lookup and one URL.
+const inFlight = new Map<string, Promise<string | null>>();
+
 /** Turns `idb://<id>` into a URL an <img> can load, or null if absent. */
-export async function resolveImage(uri: string): Promise<string | null> {
+export function resolveImage(uri: string): Promise<string | null> {
   const id = idFromUri(uri);
 
   const cached = resolved.get(id);
-  if (cached) return cached;
+  if (cached) return Promise.resolve(cached);
 
-  try {
-    const blob = await transact<Blob | undefined>('readonly', (store) => store.get(id));
-    if (!blob) return null;
-    const objectUrl = URL.createObjectURL(blob);
-    resolved.set(id, objectUrl);
-    return objectUrl;
-  } catch {
-    return null;
-  }
+  const running = inFlight.get(id);
+  if (running) return running;
+
+  const lookup = transact<Blob | undefined>('readonly', (store) => store.get(id))
+    .then((blob) => {
+      if (!blob) return null;
+      const objectUrl = URL.createObjectURL(blob);
+      resolved.set(id, objectUrl);
+      return objectUrl;
+    })
+    .catch(() => null)
+    .finally(() => inFlight.delete(id));
+
+  inFlight.set(id, lookup);
+  return lookup;
 }
 
 export async function removeImage(uri: string): Promise<void> {
